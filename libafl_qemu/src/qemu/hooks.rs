@@ -620,6 +620,74 @@ create_exec_wrapper!(cmp, (id: u64, v0: u64, v1: u64), 3, 4, CmpHookId);
 #[cfg(emulation_mode = "usermode")]
 pub type CrashHookClosure<ET, S> = Box<dyn FnMut(&mut EmulatorModules<ET, S>, i32)>;
 
+// Device access wrappers
+create_hook_id!(PostDeviceregRead, libafl_qemu_remove_post_devicereg_read_hook, true);
+create_hook_types!(
+    PostDeviceregRead,
+    fn(
+        &mut EmulatorModules<ET, S>,
+        Option<&mut S>,
+        device_base: GuestAddr,
+        device_offset: GuestAddr,
+        size: usize,
+        val: *mut u8,
+        handled: bool,
+    ),
+    Box<
+        dyn for<'a> FnMut(
+            &'a mut EmulatorModules<ET, S>,
+            Option<&'a mut S>,
+            GuestAddr,
+            GuestAddr,
+            usize,
+            *mut u8,
+            bool,
+        ),
+    >,
+    extern "C" fn(
+        *const (),
+        GuestAddr,
+        GuestAddr,
+        usize,
+        *mut u8,
+        bool,
+    )
+);
+create_exec_wrapper!(devread, (base: GuestAddr, offset: GuestAddr, size: usize, data :  *mut u8, handled :bool), 0, 1, PostDeviceregReadHookId);
+
+create_hook_id!(PreDeviceregWrite, libafl_qemu_remove_pre_devicereg_write_hook, true);
+create_hook_types!(
+    PreDeviceregWrite,
+    fn(
+        &mut EmulatorModules<ET, S>,
+        Option<&mut S>,
+        device_base: GuestAddr,
+        device_offset: GuestAddr,
+        size: usize,
+        val: *mut u8,
+        handled : *mut bool,
+    ),
+    Box<
+        dyn for<'a> FnMut(
+            &'a mut EmulatorModules<ET, S>,
+            Option<&'a mut S>,
+            GuestAddr,
+            GuestAddr,
+            usize,
+            *mut u8,
+            *mut bool,
+        ),
+    >,
+    extern "C" fn(
+        *const (),
+        GuestAddr,
+        GuestAddr,
+        usize,
+        *mut u8,
+        *mut bool,
+    )
+);
+create_exec_wrapper!(devwrite, (base: GuestAddr, offset: GuestAddr, size: usize, data : *mut u8, handled : *mut bool), 0, 1, PreDeviceregWriteHookId);
 /// The thin wrapper around QEMU hooks.
 /// It is considered unsafe to use it directly.
 #[derive(Clone, Copy, Debug)]
@@ -830,6 +898,37 @@ impl QemuHooks {
             BackdoorHookId(num)
         }
     }
+
+    #[allow(clippy::missing_transmute_annotations)]
+    pub fn add_post_devicereg_read_hook<T: Into<HookData>>(
+        &self,
+        data: T,    
+        callback: Option<unsafe extern "C" fn(T, GuestAddr, GuestAddr, usize, *mut u8, bool)>,
+    ) -> PostDeviceregReadHookId {
+        unsafe {
+            let data: u64 = data.into().0;
+            let callback: Option<unsafe extern "C" fn(u64, GuestAddr, GuestAddr, usize, *mut u8, bool)> = transmute(callback);
+            let num = libafl_qemu_sys::libafl_add_post_devicereg_read_hook(callback, data);
+            PostDeviceregReadHookId(num)
+        }
+    }
+
+    #[allow(clippy::missing_transmute_annotations)]
+    pub fn add_pre_devicereg_write_hook<T: Into<HookData>>(
+        &self,
+        data: T,    
+        callback: Option<unsafe extern "C" fn(T, GuestAddr, GuestAddr, usize, *mut u8, *mut bool)>,
+    ) -> PreDeviceregWriteHookId {
+        unsafe {
+            let data: u64 = data.into().0;
+            let callback: Option<unsafe extern "C" fn(u64, GuestAddr, GuestAddr, usize, *mut u8, *mut bool)> = transmute(callback);
+            let num = libafl_qemu_sys::libafl_add_pre_devicereg_write_hook(callback, data);
+            PreDeviceregWriteHookId(num)
+        }
+    }
+
+
+
 }
 
 #[cfg(emulation_mode = "usermode")]

@@ -19,6 +19,7 @@ use crate::qemu::{
     CrashHookClosure, NewThreadHookClosure, PostSyscallHookClosure, PostSyscallHookFn,
     PreSyscallHookClosure, PreSyscallHookFn,
 };
+use crate::{devread_0_exec_hook_wrapper, devwrite_0_exec_hook_wrapper, PostDeviceregReadHookId,PostDeviceregReadHook,PreDeviceregWriteHookId,PreDeviceregWriteHook,};
 use crate::{
     modules::{EmulatorModule, EmulatorModuleTuple},
     qemu::{
@@ -35,7 +36,7 @@ use crate::{
         CmpExecHook, CmpGenHook, CmpHookId, EdgeExecHook, EdgeGenHook, EdgeHookId, Hook, HookRepr,
         HookState, InstructionHook, InstructionHookClosure, InstructionHookFn, InstructionHookId,
         QemuHooks, ReadExecHook, ReadExecNHook, ReadGenHook, ReadHookId, WriteExecHook,
-        WriteExecNHook, WriteGenHook, WriteHookId,
+        WriteExecNHook, WriteGenHook, WriteHookId
     },
     MemAccessInfo, Qemu,
 };
@@ -124,7 +125,8 @@ where
     read_hooks: Vec<Pin<Box<HookState<5, ReadHookId>>>>,
     write_hooks: Vec<Pin<Box<HookState<5, WriteHookId>>>>,
     cmp_hooks: Vec<Pin<Box<HookState<4, CmpHookId>>>>,
-
+    devread_hooks: Vec<Pin<Box<HookState<1, PostDeviceregReadHookId>>>>,
+    devwrite_hooks: Vec<Pin<Box<HookState<1, PreDeviceregWriteHookId>>>>,
     #[cfg(emulation_mode = "usermode")]
     pre_syscall_hooks: Vec<Pin<Box<(PreSyscallHookId, FatPtr)>>>,
 
@@ -155,6 +157,8 @@ where
             read_hooks: Vec::new(),
             write_hooks: Vec::new(),
             cmp_hooks: Vec::new(),
+            devread_hooks: Vec::new(),
+            devwrite_hooks : Vec::new(),
 
             #[cfg(emulation_mode = "usermode")]
             pre_syscall_hooks: Vec::new(),
@@ -651,6 +655,82 @@ where
             Hook::Empty => None, // TODO error type
         }
     }
+    #[allow(clippy::similar_names)]
+    pub fn dev_read(
+        &mut self,
+        hook : PostDeviceregReadHook<ET,S>,
+    ) -> PostDeviceregReadHookId
+    {
+        unsafe {
+            let exec = get_raw_hook!(
+                hook,
+                devread_0_exec_hook_wrapper::<ET, S>,
+                unsafe extern "C" fn(&mut HookState<1, PostDeviceregReadHookId>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : bool)
+            );
+            self.devread_hooks.push(Box::pin(HookState::new(
+                PostDeviceregReadHookId::invalid(),
+                HookRepr::Empty,
+                HookRepr::Empty,
+                [hook_to_repr!(hook)],
+            )));
+            let hook_state = &mut *ptr::from_mut::<HookState<1, PostDeviceregReadHookId>>(
+                self.devread_hooks
+                    .last_mut()
+                    .unwrap()
+                    .as_mut()
+                    .get_unchecked_mut(),
+            );
+            let id = self
+                .qemu_hooks
+                .add_post_devicereg_read_hook(hook_state, exec);
+            self.devread_hooks
+                .last_mut()
+                .unwrap()
+                .as_mut()
+                .get_unchecked_mut()
+                .set_id(id);
+            id
+        }
+    }
+    #[allow(clippy::similar_names)]
+    pub fn dev_write(
+        &mut self,
+        hook : PreDeviceregWriteHook<ET,S>,
+    ) -> PreDeviceregWriteHookId
+    {
+        unsafe {
+            let exec = get_raw_hook!(
+                hook,
+                devwrite_0_exec_hook_wrapper::<ET, S>,
+                unsafe extern "C" fn(&mut HookState<1, PreDeviceregWriteHookId>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool)
+            );
+            self.devwrite_hooks.push(Box::pin(HookState::new(
+                PreDeviceregWriteHookId::invalid(),
+                HookRepr::Empty,
+                HookRepr::Empty,
+                [hook_to_repr!(hook)],
+            )));
+            let hook_state = &mut *ptr::from_mut::<HookState<1, PreDeviceregWriteHookId>>(
+                self.devwrite_hooks
+                    .last_mut()
+                    .unwrap()
+                    .as_mut()
+                    .get_unchecked_mut(),
+            );
+            let id = self
+                .qemu_hooks
+                .add_pre_devicereg_write_hook(hook_state, exec);
+            self.devwrite_hooks
+                .last_mut()
+                .unwrap()
+                .as_mut()
+                .get_unchecked_mut()
+                .set_id(id);
+            id
+        }
+    }
+
+
 }
 
 #[cfg(emulation_mode = "usermode")]
@@ -1025,6 +1105,20 @@ where
     ) -> BlockHookId {
         self.hooks
             .blocks(generation_hook, post_generation_hook, execution_hook)
+    }
+    #[allow(clippy::similar_names)]
+    pub fn devread(
+        &mut self,
+        exec_hook : PostDeviceregReadHook<ET, S>
+    ) -> PostDeviceregReadHookId {
+        self.hooks.dev_read(exec_hook)
+    }
+    #[allow(clippy::similar_names)]
+    pub fn devwrite(
+        &mut self,
+        exec_hook : PreDeviceregWriteHook<ET, S>
+    ) -> PreDeviceregWriteHookId {
+        self.hooks.dev_write(exec_hook)
     }
 
     #[allow(clippy::similar_names)]

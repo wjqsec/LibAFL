@@ -9,9 +9,9 @@ use which::which;
 
 use crate::cargo_add_rpath;
 
-pub const QEMU_URL: &str = "https://github.com/AFLplusplus/qemu-libafl-bridge";
+pub const QEMU_URL: &str = "https://github.com/wjqsec/qemu-libafl-bridge";
 pub const QEMU_DIRNAME: &str = "qemu-libafl-bridge";
-pub const QEMU_REVISION: &str = "24abc2a717226bedc047167f639aef0edc9ce92d";
+pub const QEMU_REVISION: &str = "5da4d5b20e0a39634603eac8ae2be9ed6b195ece";
 
 #[allow(clippy::module_name_repetitions)]
 pub struct BuildResult {
@@ -308,15 +308,16 @@ pub fn build(
             target_dir.join(QEMU_DIRNAME)
         };
 
-        let qemu_rev = target_dir.join("QEMU_REVISION");
-        if qemu_rev.exists()
-            && fs::read_to_string(&qemu_rev).expect("Failed to read QEMU_REVISION") != QEMU_REVISION
-        {
-            drop(fs::remove_dir_all(&qemu_path));
-        }
+        // let qemu_rev = target_dir.join("QEMU_REVISION");
+        // if qemu_rev.exists()
+        //     && fs::read_to_string(&qemu_rev).expect("Failed to read QEMU_REVISION") != QEMU_REVISION
+        // {
+        //     drop(fs::remove_dir_all(&qemu_path));
+        // }
+        // drop(fs::remove_dir_all(&qemu_path));
 
         if !qemu_path.is_dir() {
-            println!("cargo:warning=Qemu not found, cloning with git ({QEMU_REVISION})...");
+            println!("cargo:warning=Qemu not found, cloning with git ...");
             fs::create_dir_all(&qemu_path).unwrap();
             assert!(Command::new("git")
                 .current_dir(&qemu_path)
@@ -339,7 +340,7 @@ pub fn build(
                 .arg("--depth")
                 .arg("1")
                 .arg("origin")
-                .arg(QEMU_REVISION)
+                // .arg(QEMU_REVISION)
                 .status()
                 .unwrap()
                 .success());
@@ -350,7 +351,23 @@ pub fn build(
                 .status()
                 .unwrap()
                 .success());
-            fs::write(&qemu_rev, QEMU_REVISION).unwrap();
+            // fs::write(&qemu_rev, QEMU_REVISION).unwrap();
+        }
+        else
+        {
+            assert!(Command::new("git")
+                .current_dir(&qemu_path)
+                .arg("checkout")
+                .arg("main")
+                .status()
+                .unwrap()
+                .success());
+            assert!(Command::new("git")
+                .current_dir(&qemu_path)
+                .arg("pull")
+                .status()
+                .unwrap()
+                .success());
         }
 
         qemu_path

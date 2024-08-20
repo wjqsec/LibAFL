@@ -23,7 +23,7 @@ use libafl_qemu_sys::{guest_base, qemu_user_init, VerifyAccess};
 use libafl_qemu_sys::{
     libafl_flush_jit, libafl_get_exit_reason, libafl_page_from_addr, libafl_qemu_add_gdb_cmd,
     libafl_qemu_cpu_index, libafl_qemu_current_cpu, libafl_qemu_gdb_reply, libafl_qemu_get_cpu,
-    libafl_qemu_num_cpus, libafl_qemu_num_regs, libafl_qemu_read_reg,
+    libafl_qemu_num_cpus, libafl_qemu_num_regs, libafl_qemu_read_reg,libafl_get_first_cpu,
     libafl_qemu_remove_breakpoint, libafl_qemu_set_breakpoint, libafl_qemu_trigger_breakpoint,
     libafl_qemu_write_reg, CPUArchState, CPUStatePtr, FatPtr, GuestAddr, GuestPhysAddr, GuestUsize,
     GuestVirtAddr,
@@ -681,6 +681,17 @@ impl Qemu {
             Some(CPU { ptr })
         }
     }
+
+    #[must_use]
+    pub fn first_cpu(&self) -> Option<CPU> {
+        let ptr = unsafe { libafl_get_first_cpu() };
+        if ptr.is_null() {
+            None
+        } else {
+            Some(CPU { ptr })
+        }
+    }
+
 
     #[must_use]
     #[allow(clippy::cast_possible_wrap)]

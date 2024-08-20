@@ -210,6 +210,7 @@ num-traits = { version = "0.2", default-features = false }
 serde = { version = "1.0", default-features = false, features = [
   "alloc",
   "derive",
+  "rc",
 ] } # serialization lib
 postcard = { version = "1.0", features = [
   "alloc",

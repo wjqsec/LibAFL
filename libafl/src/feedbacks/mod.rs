@@ -53,7 +53,9 @@ pub mod new_hash_feedback;
 #[cfg(feature = "std")]
 pub mod stdio;
 pub mod transferred;
-
+#[cfg(feature = "multipart_inputs")]
+#[allow(missing_docs)]
+pub mod stream;
 /// Feedbacks evaluate the observers.
 /// Basically, they reduce the information provided by an observer to a value,
 /// indicating the "interestingness" of the last run.

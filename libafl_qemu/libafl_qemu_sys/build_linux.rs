@@ -103,4 +103,6 @@ pub fn build() {
         stub_bindings_file.as_path(),
         bindings_file.as_path(),
     );
+
+    copy(bindings_file, stub_bindings_file).expect("Failed to copy the bindings stub");
 }
