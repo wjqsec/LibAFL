@@ -17809,7 +17809,7 @@ extern "C" {
                 device_offset: target_ulong,
                 size: usize,
                 val: *mut u8,
-                handled: bool,
+                handled: u32,
             ),
         >,
         data: u64,
@@ -17838,6 +17838,55 @@ extern "C" {
 }
 extern "C" {
     pub fn libafl_qemu_remove_pre_devicereg_write_hook(
+        num: usize,
+        invalidate: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn libafl_add_post_cpuid_hook(
+        callback: ::std::option::Option<
+            unsafe extern "C" fn(
+                data: u64,
+                in_eax: u32,
+                out_eax: *mut u32,
+                out_ebx: *mut u32,
+                out_ecx: *mut u32,
+                out_edx: *mut u32,
+            ),
+        >,
+        data: u64,
+    ) -> usize;
+}
+extern "C" {
+    pub fn libafl_qemu_remove_post_cpuid_hook(
+        num: usize,
+        invalidate: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn libafl_add_post_rdmsr_hook(
+        callback: ::std::option::Option<
+            unsafe extern "C" fn(data: u64, in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32),
+        >,
+        data: u64,
+    ) -> usize;
+}
+extern "C" {
+    pub fn libafl_qemu_remove_post_rdmsr_hook(
+        num: usize,
+        invalidate: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn libafl_add_pre_wrmsr_hook(
+        callback: ::std::option::Option<
+            unsafe extern "C" fn(data: u64, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32),
+        >,
+        data: u64,
+    ) -> usize;
+}
+extern "C" {
+    pub fn libafl_qemu_remove_pre_wrmsr_hook(
         num: usize,
         invalidate: ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;

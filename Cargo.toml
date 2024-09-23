@@ -12,7 +12,7 @@ members = [
   "utils/build_and_test_fuzzers",
   "utils/deexit",
   "utils/libafl_benches",
-  "utils/gramatron/construct_automata", "fuzzers/qemu/qemu_deviceio",
+  "utils/gramatron/construct_automata", "fuzzers/qemu/qemu_smm",
 ]
 default-members = [
   "libafl",

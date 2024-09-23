@@ -19,7 +19,10 @@ use crate::qemu::{
     CrashHookClosure, NewThreadHookClosure, PostSyscallHookClosure, PostSyscallHookFn,
     PreSyscallHookClosure, PreSyscallHookFn,
 };
-use crate::{devread_0_exec_hook_wrapper, devwrite_0_exec_hook_wrapper, PostDeviceregReadHookId,PostDeviceregReadHook,PreDeviceregWriteHookId,PreDeviceregWriteHook,};
+use crate::{cpuid_0_exec_hook_wrapper, devread_0_exec_hook_wrapper, devwrite_0_exec_hook_wrapper, 
+    rdmsr_0_exec_hook_wrapper, wrmsr_0_exec_hook_wrapper,
+    PostCpuidHook, PostCpuidHookId, PostDeviceregReadHook, PostDeviceregReadHookId, 
+    PostRdmsrHook, PostRdmsrHookId, PreDeviceregWriteHook, PreDeviceregWriteHookId, PreWrmsrHook, PreWrmsrHookId};
 use crate::{
     modules::{EmulatorModule, EmulatorModuleTuple},
     qemu::{
@@ -127,6 +130,9 @@ where
     cmp_hooks: Vec<Pin<Box<HookState<4, CmpHookId>>>>,
     devread_hooks: Vec<Pin<Box<HookState<1, PostDeviceregReadHookId>>>>,
     devwrite_hooks: Vec<Pin<Box<HookState<1, PreDeviceregWriteHookId>>>>,
+    cpuid_hooks: Vec<Pin<Box<HookState<1, PostCpuidHookId>>>>,
+    rdmsr_hooks: Vec<Pin<Box<HookState<1, PostRdmsrHookId>>>>,
+    wrmsr_hooks: Vec<Pin<Box<HookState<1, PreWrmsrHookId>>>>,
     #[cfg(emulation_mode = "usermode")]
     pre_syscall_hooks: Vec<Pin<Box<(PreSyscallHookId, FatPtr)>>>,
 
@@ -159,6 +165,9 @@ where
             cmp_hooks: Vec::new(),
             devread_hooks: Vec::new(),
             devwrite_hooks : Vec::new(),
+            cpuid_hooks : Vec::new(),
+            rdmsr_hooks : Vec::new(),
+            wrmsr_hooks : Vec::new(),
 
             #[cfg(emulation_mode = "usermode")]
             pre_syscall_hooks: Vec::new(),
@@ -665,7 +674,7 @@ where
             let exec = get_raw_hook!(
                 hook,
                 devread_0_exec_hook_wrapper::<ET, S>,
-                unsafe extern "C" fn(&mut HookState<1, PostDeviceregReadHookId>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : bool)
+                unsafe extern "C" fn(&mut HookState<1, PostDeviceregReadHookId>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32)
             );
             self.devread_hooks.push(Box::pin(HookState::new(
                 PostDeviceregReadHookId::invalid(),
@@ -721,6 +730,120 @@ where
                 .qemu_hooks
                 .add_pre_devicereg_write_hook(hook_state, exec);
             self.devwrite_hooks
+                .last_mut()
+                .unwrap()
+                .as_mut()
+                .get_unchecked_mut()
+                .set_id(id);
+            id
+        }
+    }
+
+    #[allow(clippy::similar_names)]
+    pub fn cpuid(
+        &mut self,
+        hook : PostCpuidHook<ET,S>,
+    ) -> PostCpuidHookId
+    {
+        unsafe {
+            let exec = get_raw_hook!(
+                hook,
+                cpuid_0_exec_hook_wrapper::<ET, S>,
+                unsafe extern "C" fn(&mut HookState<1, PostCpuidHookId>, in_eax: u32, out_eax: *mut u32,out_ebx: *mut u32, out_ecx: *mut u32, out_edx: *mut u32)
+            );
+            self.cpuid_hooks.push(Box::pin(HookState::new(
+                PostCpuidHookId::invalid(),
+                HookRepr::Empty,
+                HookRepr::Empty,
+                [hook_to_repr!(hook)],
+            )));
+            let hook_state = &mut *ptr::from_mut::<HookState<1, PostCpuidHookId>>(
+                self.cpuid_hooks
+                    .last_mut()
+                    .unwrap()
+                    .as_mut()
+                    .get_unchecked_mut(),
+            );
+            let id = self
+                .qemu_hooks
+                .add_post_cpuid_hook(hook_state, exec);
+            self.cpuid_hooks
+                .last_mut()
+                .unwrap()
+                .as_mut()
+                .get_unchecked_mut()
+                .set_id(id);
+            id
+        }
+    }
+
+    #[allow(clippy::similar_names)]
+    pub fn rdmsr(
+        &mut self,
+        hook : PostRdmsrHook<ET,S>,
+    ) -> PostRdmsrHookId
+    {
+        unsafe {
+            let exec = get_raw_hook!(
+                hook,
+                rdmsr_0_exec_hook_wrapper::<ET, S>,
+                unsafe extern "C" fn(&mut HookState<1, PostRdmsrHookId>, in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32)
+            );
+            self.rdmsr_hooks.push(Box::pin(HookState::new(
+                PostRdmsrHookId::invalid(),
+                HookRepr::Empty,
+                HookRepr::Empty,
+                [hook_to_repr!(hook)],
+            )));
+            let hook_state = &mut *ptr::from_mut::<HookState<1, PostRdmsrHookId>>(
+                self.rdmsr_hooks
+                    .last_mut()
+                    .unwrap()
+                    .as_mut()
+                    .get_unchecked_mut(),
+            );
+            let id = self
+                .qemu_hooks
+                .add_post_rdmsr_hook(hook_state, exec);
+            self.rdmsr_hooks
+                .last_mut()
+                .unwrap()
+                .as_mut()
+                .get_unchecked_mut()
+                .set_id(id);
+            id
+        }
+    }
+
+    #[allow(clippy::similar_names)]
+    pub fn wrmsr(
+        &mut self,
+        hook : PreWrmsrHook<ET,S>,
+    ) -> PreWrmsrHookId
+    {
+        unsafe {
+            let exec = get_raw_hook!(
+                hook,
+                wrmsr_0_exec_hook_wrapper::<ET, S>,
+                unsafe extern "C" fn(&mut HookState<1, PreWrmsrHookId>, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32)
+            );
+            self.wrmsr_hooks.push(Box::pin(HookState::new(
+                PreWrmsrHookId::invalid(),
+                HookRepr::Empty,
+                HookRepr::Empty,
+                [hook_to_repr!(hook)],
+            )));
+            let hook_state = &mut *ptr::from_mut::<HookState<1, PreWrmsrHookId>>(
+                self.wrmsr_hooks
+                    .last_mut()
+                    .unwrap()
+                    .as_mut()
+                    .get_unchecked_mut(),
+            );
+            let id = self
+                .qemu_hooks
+                .add_pre_wrmsr_hook(hook_state, exec);
+            self.wrmsr_hooks
                 .last_mut()
                 .unwrap()
                 .as_mut()
@@ -1119,6 +1242,28 @@ where
         exec_hook : PreDeviceregWriteHook<ET, S>
     ) -> PreDeviceregWriteHookId {
         self.hooks.dev_write(exec_hook)
+    }
+
+    #[allow(clippy::similar_names)]
+    pub fn cpuid(
+        &mut self,
+        exec_hook : PostCpuidHook<ET, S>
+    ) -> PostCpuidHookId {
+        self.hooks.cpuid(exec_hook)
+    }
+    #[allow(clippy::similar_names)]
+    pub fn rdmsr(
+        &mut self,
+        exec_hook : PostRdmsrHook<ET, S>
+    ) -> PostRdmsrHookId {
+        self.hooks.rdmsr(exec_hook)
+    }
+    #[allow(clippy::similar_names)]
+    pub fn wrmsr(
+        &mut self,
+        exec_hook : PreWrmsrHook<ET, S>
+    ) -> PreWrmsrHookId {
+        self.hooks.wrmsr(exec_hook)
     }
 
     #[allow(clippy::similar_names)]

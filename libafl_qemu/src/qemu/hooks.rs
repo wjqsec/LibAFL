@@ -631,7 +631,7 @@ create_hook_types!(
         device_offset: GuestAddr,
         size: usize,
         val: *mut u8,
-        handled: bool,
+        handled: u32,
     ),
     Box<
         dyn for<'a> FnMut(
@@ -641,7 +641,7 @@ create_hook_types!(
             GuestAddr,
             usize,
             *mut u8,
-            bool,
+            u32,
         ),
     >,
     extern "C" fn(
@@ -650,10 +650,10 @@ create_hook_types!(
         GuestAddr,
         usize,
         *mut u8,
-        bool,
+        u32,
     )
 );
-create_exec_wrapper!(devread, (base: GuestAddr, offset: GuestAddr, size: usize, data :  *mut u8, handled :bool), 0, 1, PostDeviceregReadHookId);
+create_exec_wrapper!(devread, (base: GuestAddr, offset: GuestAddr, size: usize, data :  *mut u8, handled :u32), 0, 1, PostDeviceregReadHookId);
 
 create_hook_id!(PreDeviceregWrite, libafl_qemu_remove_pre_devicereg_write_hook, true);
 create_hook_types!(
@@ -688,6 +688,96 @@ create_hook_types!(
     )
 );
 create_exec_wrapper!(devwrite, (base: GuestAddr, offset: GuestAddr, size: usize, data : *mut u8, handled : *mut bool), 0, 1, PreDeviceregWriteHookId);
+
+create_hook_id!(PostCpuid, libafl_qemu_remove_post_cpuid_hook, true);
+create_hook_types!(
+    PostCpuid,
+    fn(
+        &mut EmulatorModules<ET, S>,
+        Option<&mut S>,
+        in_eax: u32,
+        out_eax: *mut u32,
+        out_ebx: *mut u32,
+        out_ecx: *mut u32,
+        out_edx: *mut u32,
+    ),
+    Box<
+        dyn for<'a> FnMut(
+            &'a mut EmulatorModules<ET, S>,
+            Option<&'a mut S>,
+            u32,
+            *mut u32,
+            *mut u32,
+            *mut u32,
+            *mut u32,
+        ),
+    >,
+    extern "C" fn(
+        *const (),
+        u32,
+        *mut u32,
+        *mut u32,
+        *mut u32,
+        *mut u32,
+    )
+);
+create_exec_wrapper!(cpuid, (in_eax: u32, out_eax: *mut u32,out_ebx: *mut u32, out_ecx: *mut u32, out_edx: *mut u32), 0, 1, PostCpuidHookId);
+
+create_hook_id!(PostRdmsr, libafl_qemu_remove_post_rdmsr_hook, true);
+create_hook_types!(
+    PostRdmsr,
+    fn(
+        &mut EmulatorModules<ET, S>,
+        Option<&mut S>,
+        in_ecx: u32,
+        out_eax: *mut u32,
+        out_edx: *mut u32,
+    ),
+    Box<
+        dyn for<'a> FnMut(
+            &'a mut EmulatorModules<ET, S>,
+            Option<&'a mut S>,
+            u32,
+            *mut u32,
+            *mut u32,
+        ),
+    >,
+    extern "C" fn(
+        *const (),
+        u32,
+        *mut u32,
+        *mut u32,
+    )
+);
+create_exec_wrapper!(rdmsr, (in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32), 0, 1, PostRdmsrHookId);
+
+create_hook_id!(PreWrmsr, libafl_qemu_remove_pre_wrmsr_hook, true);
+create_hook_types!(
+    PreWrmsr,
+    fn(
+        &mut EmulatorModules<ET, S>,
+        Option<&mut S>,
+        in_ecx: u32,
+        in_eax: *mut u32,
+        in_edx: *mut u32,
+    ),
+    Box<
+        dyn for<'a> FnMut(
+            &'a mut EmulatorModules<ET, S>,
+            Option<&'a mut S>,
+            u32,
+            *mut u32,
+            *mut u32,
+        ),
+    >,
+    extern "C" fn(
+        *const (),
+        u32,
+        *mut u32,
+        *mut u32,
+    )
+);
+create_exec_wrapper!(wrmsr, (in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32), 0, 1, PreWrmsrHookId);
 /// The thin wrapper around QEMU hooks.
 /// It is considered unsafe to use it directly.
 #[derive(Clone, Copy, Debug)]
@@ -903,11 +993,11 @@ impl QemuHooks {
     pub fn add_post_devicereg_read_hook<T: Into<HookData>>(
         &self,
         data: T,    
-        callback: Option<unsafe extern "C" fn(T, GuestAddr, GuestAddr, usize, *mut u8, bool)>,
+        callback: Option<unsafe extern "C" fn(T, GuestAddr, GuestAddr, usize, *mut u8, u32)>,
     ) -> PostDeviceregReadHookId {
         unsafe {
             let data: u64 = data.into().0;
-            let callback: Option<unsafe extern "C" fn(u64, GuestAddr, GuestAddr, usize, *mut u8, bool)> = transmute(callback);
+            let callback: Option<unsafe extern "C" fn(u64, GuestAddr, GuestAddr, usize, *mut u8, u32)> = transmute(callback);
             let num = libafl_qemu_sys::libafl_add_post_devicereg_read_hook(callback, data);
             PostDeviceregReadHookId(num)
         }
@@ -924,6 +1014,48 @@ impl QemuHooks {
             let callback: Option<unsafe extern "C" fn(u64, GuestAddr, GuestAddr, usize, *mut u8, *mut bool)> = transmute(callback);
             let num = libafl_qemu_sys::libafl_add_pre_devicereg_write_hook(callback, data);
             PreDeviceregWriteHookId(num)
+        }
+    }
+
+    #[allow(clippy::missing_transmute_annotations)]
+    pub fn add_post_cpuid_hook<T: Into<HookData>>(
+        &self,
+        data: T,    
+        callback: Option<unsafe extern "C" fn(T, u32, *mut u32, *mut u32, *mut u32, *mut u32)>,
+    ) -> PostCpuidHookId {
+        unsafe {
+            let data: u64 = data.into().0;
+            let callback: Option<unsafe extern "C" fn(u64, u32, *mut u32, *mut u32, *mut u32, *mut u32)> = transmute(callback);
+            let num = libafl_qemu_sys::libafl_add_post_cpuid_hook(callback, data);
+            PostCpuidHookId(num)
+        }
+    }
+
+    #[allow(clippy::missing_transmute_annotations)]
+    pub fn add_post_rdmsr_hook<T: Into<HookData>>(
+        &self,
+        data: T,    
+        callback: Option<unsafe extern "C" fn(T, u32, *mut u32, *mut u32)>,
+    ) -> PostRdmsrHookId {
+        unsafe {
+            let data: u64 = data.into().0;
+            let callback: Option<unsafe extern "C" fn(u64, u32, *mut u32, *mut u32)> = transmute(callback);
+            let num = libafl_qemu_sys::libafl_add_post_rdmsr_hook(callback, data);
+            PostRdmsrHookId(num)
+        }
+    }
+
+    #[allow(clippy::missing_transmute_annotations)]
+    pub fn add_pre_wrmsr_hook<T: Into<HookData>>(
+        &self,
+        data: T,    
+        callback: Option<unsafe extern "C" fn(T, u32, *mut u32, *mut u32)>,
+    ) -> PreWrmsrHookId {
+        unsafe {
+            let data: u64 = data.into().0;
+            let callback: Option<unsafe extern "C" fn(u64, u32, *mut u32, *mut u32)> = transmute(callback);
+            let num = libafl_qemu_sys::libafl_add_pre_wrmsr_hook(callback, data);
+            PreWrmsrHookId(num)
         }
     }
 
