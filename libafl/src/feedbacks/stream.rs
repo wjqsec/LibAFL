@@ -55,7 +55,6 @@ where
     {
         let observer = observers.get(&self.observer_handle).unwrap();
         for new_stream in observer.get_newstream().into_iter() {
-            println!("add new stream {:#x}",new_stream);
             testcase.input_mut().as_mut().unwrap().add_part(new_stream, BytesInput::new(vec![0x00,0x00,0x00,0x00]));
         }
         Ok(())
