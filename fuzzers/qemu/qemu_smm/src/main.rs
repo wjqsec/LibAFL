@@ -8,6 +8,7 @@ use std::str::FromStr;
 use std::{cell::RefCell, collections::HashMap, env, fmt::format, path::PathBuf, process, rc::Rc, vec};
 use std::ptr::copy;
 use rand::Rng;
+use std::slice;
 use log::*;
 use libafl::{
     corpus::{Corpus, InMemoryCorpus, OnDiskCorpus}, events::{launcher::Launcher, EventConfig}, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, HasMutatorBytes, HasTargetBytes, Input}, monitors::MultiMonitor, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, CachedOnDiskCorpus, IfStage, PowerQueueScheduler, SimpleEventManager, SimpleMonitor}, schedulers::{IndexesLenTimeMinimizerScheduler, QueueScheduler}, stages::StdMutationalStage, state::{HasCorpus, StdState}, Error
@@ -53,6 +54,7 @@ use libafl_qemu::SnapshotManager;
 use libafl_qemu::QemuSnapshotManager;
 use libafl_qemu::IsSnapshotManager;
 use libafl_qemu::DeviceSnapshotFilter;
+use libafl_qemu::QemuMemoryChunk;
 use crate::snapshot_dev_filter::get_snapshot_dev_filter_list;
 struct TestcaseInput {
     cursor : usize,
@@ -165,18 +167,30 @@ fn pre_io_write_common(pc : GuestReg, base : GuestAddr, offset : GuestAddr,size 
     debug!("pre_io_write {pc:#x} {addr:#x} {size:#x} {value:#x}");
 }
 
-fn backdoor_common(cmd : u64 , arg1 : u64, arg2 : u64, arg3 : u64)
+fn backdoor_common(qemu : Qemu,cmd : u64 , arg1 : u64, arg2 : u64, arg3 : u64)
 {
     match cmd {
         9 => unsafe { 
             *NUM_STREAMS.get() =  arg1; 
-            debug!("backdoor set num stream {:#x}\n",arg1);
+            debug!("backdoor set num stream {:#x}",arg1);
         },
         10 => {
-            debug!("backdoor write stream data {:#x}\n",arg1);
+            let mem_chunk = QemuMemoryChunk::virt(arg2, arg3, qemu.first_cpu().unwrap());
+            unsafe {
+                let raw_input: *mut HashMap<u128,TestcaseInput> = *GLOB_INPUT.get();
+                let id_entry = (*raw_input).get_mut(&(arg1 as u128));
+                if let Some(entry) = id_entry {
+                    let _ = mem_chunk.write(qemu, slice::from_raw_parts(entry.input,entry.len));
+                }
+                else {
+                    panic!("cannot find stream {:#x}",arg1);
+                }
+
+            }
+            debug!("backdoor write stream data {:#x}",arg1);
         },
         _ => { 
-            panic!("backdoor wrong cmd {:#x}\n",cmd); 
+            panic!("backdoor wrong cmd {:#x}",cmd); 
         },
     };
 }
@@ -194,7 +208,7 @@ fn qemu_run_til_start(qemu : &mut Qemu, cpu : &mut CPU)
                 if cmd == 6
                 {
                     if (*NUM_STREAMS.get()) != 0 {
-                        debug!("qemu_run_til_start returned num_stream {:#x}\n",(*NUM_STREAMS.get()));
+                        debug!("qemu_run_til_start returned num_stream {:#x}",(*NUM_STREAMS.get()));
                         return;
                     }
                     else {
@@ -202,11 +216,11 @@ fn qemu_run_til_start(qemu : &mut Qemu, cpu : &mut CPU)
                     }
                 }
                 else {
-                    panic!("qemu_run_til_start error cmd {:#x}\n",cmd);
+                    panic!("qemu_run_til_start error cmd {:#x}",cmd);
                 }
             }
         }
-        panic!("qemu_run_til_start error reason\n");
+        panic!("qemu_run_til_start error reason");
     }
 }
 
@@ -220,7 +234,7 @@ fn qemu_run_to_end(qemu : &mut Qemu, cpu : &mut CPU) ->ExitKind
             {
                 let cmd : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
                 let arg1 : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
-                debug!("qemu_run_to_end sync exit {:#x} {:#x}\n",cmd,arg1);
+                debug!("qemu_run_to_end sync exit {:#x} {:#x}",cmd,arg1);
                 if cmd == 4 {
                     if arg1 == 0 {
                         return ExitKind::Crash;
@@ -236,23 +250,23 @@ fn qemu_run_to_end(qemu : &mut Qemu, cpu : &mut CPU) ->ExitKind
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason
             {
-                debug!("qemu_run_to_end qemu end\n");
+                debug!("qemu_run_to_end qemu end");
                 return ExitKind::Ok;
             }
             else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason
             {
-                debug!("qemu_run_to_end qemu breakpoint\n");
+                debug!("qemu_run_to_end qemu breakpoint");
                 return ExitKind::Timeout;
             }
             else
             {
-                debug!("qemu_run_to_end qemu exit error\n");
+                debug!("qemu_run_to_end qemu exit error");
                 return ExitKind::Ok;
             }
         }
         else
         {
-            debug!("qemu_run_to_end get qemu exit reason error\n");
+            debug!("qemu_run_to_end get qemu exit reason error");
             return ExitKind::Ok;
         }
     }
@@ -301,12 +315,12 @@ fn main() {
 
     let backdoor_id = emulator.modules_mut().backdoor(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, addr : GuestAddr| {
         let pc : GuestReg = current_cpu.read_reg(Regs::Pc).unwrap();
-
+        
         let cmd : GuestReg = current_cpu.read_reg(Regs::Rax).unwrap();
         let arg1 : GuestReg = current_cpu.read_reg(Regs::Rdi).unwrap();
         let arg2 : GuestReg = current_cpu.read_reg(Regs::Rsi).unwrap();
         let arg3 : GuestReg = current_cpu.read_reg(Regs::Rdx).unwrap();
-        backdoor_common(cmd, arg1, arg2, arg3);
+        backdoor_common(modules.qemu(), cmd, arg1, arg2, arg3);
     })));
     
     qemu_run_til_start(&mut qemu, &mut current_cpu);
