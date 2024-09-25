@@ -362,7 +362,6 @@ fn main() {
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         debug!("new run");
         set_exec_count(0);
-        NEW_STREAM.lock().unwrap().push(0x1234);
         let mut inputs = HashMap::new();
         for (id, part) in input.iter()
         {

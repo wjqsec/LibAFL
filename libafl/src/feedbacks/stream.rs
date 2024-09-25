@@ -37,7 +37,7 @@ where
         OT: ObserversTuple<S>,
     {
         // TODO Replace with match_name_type when stable
-        Ok(true)
+        Ok(false)
     }
 
     /// Append to the testcase the generated metadata in case of a new corpus item
