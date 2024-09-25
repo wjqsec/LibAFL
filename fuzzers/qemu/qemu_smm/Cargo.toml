@@ -1,0 +1,41 @@
+[package]
+name = "qemu_smm"
+version = "0.13.2"
+edition = "2021"
+
+[features]
+default = ["std", "classic"]
+std = []
+
+classic = [
+] # The classic way to interact with LibAFL QEMU, with direct calls to QEMU's functions
+breakpoint = [] # Uses the command system, with breakpoints
+sync_exit = [] # Uses the command system, with sync exit.
+
+shared = ["libafl_qemu/shared"]
+
+[profile.release]
+incremental = true
+debug = true
+lto = "fat"
+codegen-units = 1
+
+[dependencies]
+libafl = { path = "../../../libafl/" , features = ["multipart_inputs"] }
+libafl_bolts = { path = "../../../libafl_bolts/" }
+libafl_qemu = { path = "../../../libafl_qemu/", features = [
+  "x86_64",
+  "systemmode",
+] }
+libafl_targets = "0.13.2"
+libafl_qemu_sys = { path = "../../../libafl_qemu/libafl_qemu_sys", features = [
+  "x86_64",
+  "systemmode",
+] }
+env_logger = "*"
+log = "*"
+once_cell = "1.19.0"
+rand = "0.8.5"
+
+[build-dependencies]
+libafl_qemu_build = { path = "../../../libafl_qemu/libafl_qemu_build" }
