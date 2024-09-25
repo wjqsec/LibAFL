@@ -16,9 +16,9 @@ use libafl::prelude::{ColorizationStage,TracingStage};
 use libafl::prelude::InMemoryOnDiskCorpus;
 use libafl::state::HasCurrentTestcase;
 use libafl_bolts::tuples::MatchNameRef;
-use libafl_targets::{cmps::AFLppCmpLogMap, AFLppCmpLogObserver, AFLppCmplogTracingStage,CmpLogObserver};
 use libafl::executors::inprocess::InProcessExecutor;
 use libafl::feedbacks::stream::StreamFeedback;
+use libafl_qemu::modules::cmplog::CmpLogObserver;
 use libafl::inputs::multi::MultipartInput;
 use std::sync::{Arc, Mutex};
 use libafl::stages::mutational::MultiMutationalStage;
@@ -362,6 +362,7 @@ fn main() {
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         debug!("new run");
         set_exec_count(0);
+        NEW_STREAM.lock().unwrap().push(0x1234);
         let mut inputs = HashMap::new();
         for (id, part) in input.iter()
         {
