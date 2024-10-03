@@ -17892,6 +17892,26 @@ extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 extern "C" {
+    pub fn libafl_add_pre_memrw_hook(
+        callback: ::std::option::Option<
+            unsafe extern "C" fn(
+                data: u64,
+                pc: target_ulong,
+                addr: target_ulong,
+                size: u64,
+                out_addr: *mut target_ulong,
+            ),
+        >,
+        data: u64,
+    ) -> usize;
+}
+extern "C" {
+    pub fn libafl_qemu_remove_pre_memrw_hook(
+        num: usize,
+        invalidate: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
     pub fn libafl_jit_trace_edge_hitcount(data: u64, id: u64) -> usize;
 }
 extern "C" {

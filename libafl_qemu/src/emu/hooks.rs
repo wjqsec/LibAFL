@@ -20,9 +20,9 @@ use crate::qemu::{
     PreSyscallHookClosure, PreSyscallHookFn,
 };
 use crate::{cpuid_0_exec_hook_wrapper, devread_0_exec_hook_wrapper, devwrite_0_exec_hook_wrapper, 
-    rdmsr_0_exec_hook_wrapper, wrmsr_0_exec_hook_wrapper,
+    rdmsr_0_exec_hook_wrapper, wrmsr_0_exec_hook_wrapper,memrw_0_exec_hook_wrapper,
     PostCpuidHook, PostCpuidHookId, PostDeviceregReadHook, PostDeviceregReadHookId, 
-    PostRdmsrHook, PostRdmsrHookId, PreDeviceregWriteHook, PreDeviceregWriteHookId, PreWrmsrHook, PreWrmsrHookId};
+    PostRdmsrHook, PostRdmsrHookId, PreDeviceregWriteHook, PreDeviceregWriteHookId, PreWrmsrHook, PreWrmsrHookId, PreMemrwHook,PreMemrwHookId};
 use crate::{
     modules::{EmulatorModule, EmulatorModuleTuple},
     qemu::{
@@ -133,6 +133,7 @@ where
     cpuid_hooks: Vec<Pin<Box<HookState<1, PostCpuidHookId>>>>,
     rdmsr_hooks: Vec<Pin<Box<HookState<1, PostRdmsrHookId>>>>,
     wrmsr_hooks: Vec<Pin<Box<HookState<1, PreWrmsrHookId>>>>,
+    memrw_hooks: Vec<Pin<Box<HookState<1, PreMemrwHookId>>>>,
     #[cfg(emulation_mode = "usermode")]
     pre_syscall_hooks: Vec<Pin<Box<(PreSyscallHookId, FatPtr)>>>,
 
@@ -168,7 +169,7 @@ where
             cpuid_hooks : Vec::new(),
             rdmsr_hooks : Vec::new(),
             wrmsr_hooks : Vec::new(),
-
+            memrw_hooks : Vec::new(),
             #[cfg(emulation_mode = "usermode")]
             pre_syscall_hooks: Vec::new(),
 
@@ -853,6 +854,44 @@ where
         }
     }
 
+    #[allow(clippy::similar_names)]
+    pub fn memrw(
+        &mut self,
+        hook : PreMemrwHook<ET,S>,
+    ) -> PreMemrwHookId
+    {
+        unsafe {
+            let exec = get_raw_hook!(
+                hook,
+                memrw_0_exec_hook_wrapper::<ET, S>,
+                unsafe extern "C" fn(&mut HookState<1, PreMemrwHookId>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr)
+            );
+            self.memrw_hooks.push(Box::pin(HookState::new(
+                PreMemrwHookId::invalid(),
+                HookRepr::Empty,
+                HookRepr::Empty,
+                [hook_to_repr!(hook)],
+            )));
+            let hook_state = &mut *ptr::from_mut::<HookState<1, PreMemrwHookId>>(
+                self.memrw_hooks
+                    .last_mut()
+                    .unwrap()
+                    .as_mut()
+                    .get_unchecked_mut(),
+            );
+            let id = self
+                .qemu_hooks
+                .add_pre_memrw_hook(hook_state, exec);
+            self.memrw_hooks
+                .last_mut()
+                .unwrap()
+                .as_mut()
+                .get_unchecked_mut()
+                .set_id(id);
+            id
+        }
+    }
+
 
 }
 
@@ -1264,6 +1303,13 @@ where
         exec_hook : PreWrmsrHook<ET, S>
     ) -> PreWrmsrHookId {
         self.hooks.wrmsr(exec_hook)
+    }
+    #[allow(clippy::similar_names)]
+    pub fn memrw(
+        &mut self,
+        exec_hook : PreMemrwHook<ET, S>
+    ) -> PreMemrwHookId {
+        self.hooks.memrw(exec_hook)
     }
 
     #[allow(clippy::similar_names)]

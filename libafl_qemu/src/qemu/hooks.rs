@@ -778,6 +778,37 @@ create_hook_types!(
     )
 );
 create_exec_wrapper!(wrmsr, (in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32), 0, 1, PreWrmsrHookId);
+
+create_hook_id!(PreMemrw, libafl_qemu_remove_pre_memrw_hook, true);
+create_hook_types!(
+    PreMemrw,
+    fn(
+        &mut EmulatorModules<ET, S>,
+        Option<&mut S>,
+        pc : GuestAddr,
+        addr: GuestAddr,
+        size: u64,
+        out_addr: *mut GuestAddr,
+    ),
+    Box<
+        dyn for<'a> FnMut(
+            &'a mut EmulatorModules<ET, S>,
+            Option<&'a mut S>,
+            GuestAddr,
+            GuestAddr,
+            u64,
+            *mut GuestAddr,
+        ),
+    >,
+    extern "C" fn(
+        *const (),
+        GuestAddr,
+        GuestAddr,
+        u64,
+        *mut GuestAddr,
+    )
+);
+create_exec_wrapper!(memrw, (pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr), 0, 1, PreMemrwHookId);
 /// The thin wrapper around QEMU hooks.
 /// It is considered unsafe to use it directly.
 #[derive(Clone, Copy, Debug)]
@@ -1056,6 +1087,20 @@ impl QemuHooks {
             let callback: Option<unsafe extern "C" fn(u64, u32, *mut u32, *mut u32)> = transmute(callback);
             let num = libafl_qemu_sys::libafl_add_pre_wrmsr_hook(callback, data);
             PreWrmsrHookId(num)
+        }
+    }
+
+    #[allow(clippy::missing_transmute_annotations)]
+    pub fn add_pre_memrw_hook<T: Into<HookData>>(
+        &self,
+        data: T,    
+        callback: Option<unsafe extern "C" fn(T, GuestAddr, GuestAddr, u64, *mut GuestAddr)>,
+    ) -> PreMemrwHookId {
+        unsafe {
+            let data: u64 = data.into().0;
+            let callback: Option<unsafe extern "C" fn(u64, GuestAddr, GuestAddr, u64, *mut GuestAddr)> = transmute(callback);
+            let num = libafl_qemu_sys::libafl_add_pre_memrw_hook(callback, data);
+            PreMemrwHookId(num)
         }
     }
 

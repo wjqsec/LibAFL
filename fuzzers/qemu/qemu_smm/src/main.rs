@@ -9,6 +9,7 @@ use std::{cell::RefCell, collections::HashMap, env, fmt::format, path::PathBuf, 
 use std::ptr::copy;
 use rand::Rng;
 use std::slice;
+use std::process::{Command, exit};
 use log::*;
 use libafl::{
     corpus::{Corpus, InMemoryCorpus, OnDiskCorpus}, events::{launcher::Launcher, EventConfig}, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, HasMutatorBytes, HasTargetBytes, Input}, monitors::MultiMonitor, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, CachedOnDiskCorpus, IfStage, PowerQueueScheduler, SimpleEventManager, SimpleMonitor}, schedulers::{IndexesLenTimeMinimizerScheduler, QueueScheduler}, stages::StdMutationalStage, state::{HasCorpus, StdState}, Error
@@ -180,6 +181,7 @@ fn backdoor_common(qemu : Qemu,cmd : u64 , arg1 : u64, arg2 : u64, arg3 : u64)
                 let raw_input: *mut HashMap<u128,TestcaseInput> = *GLOB_INPUT.get();
                 let id_entry = (*raw_input).get_mut(&(arg1 as u128));
                 if let Some(entry) = id_entry {
+                    debug!("write stream {:#x} {:#x} {:#x}",arg1, arg2, arg3);
                     let _ = mem_chunk.write(qemu, slice::from_raw_parts(entry.input,entry.len));
                 }
                 else {
@@ -250,7 +252,21 @@ fn qemu_run_to_end(qemu : &mut Qemu, cpu : &mut CPU) ->ExitKind
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason
             {
-                debug!("qemu_run_to_end qemu end");
+                // ctrl+c let qemu breaks the console, clean it before exit
+                let status = Command::new("stty")
+                                                .arg("sane")
+                                                .status()
+                                                .expect("Failed to execute stty sane");
+
+                // Check if the command was successful
+                if status.success() {
+                    debug!("Terminal reset to sane mode.");
+                } else {
+                    debug!("Failed to reset terminal.");
+                }
+
+                // Exit the process
+                exit(0); // or use any desired exit code
                 return ExitKind::Ok;
             }
             else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason
@@ -281,16 +297,17 @@ fn gen_ovmf_qemu_args() -> Vec<String>
     args.push(String::from_str("-global").unwrap());
     args.push(String::from_str("driver=cfi.pflash01,property=secure,value=on").unwrap());
     args.push(String::from_str("-drive").unwrap());
-    args.push(String::from_str("if=pflash,format=raw,unit=0,file=/home/w/hd/uefi_fuzz/fuzzer/edk2/Build/OvmfX64/DEBUG_GCC5/FV/OVMF_CODE.fd,readonly=on").unwrap());
+    args.push(String::from_str("if=pflash,format=raw,unit=0,file=/home/w/hd/uefi_fuzz/fuzzer/edk2/Build/OvmfX64/RELEASE_GCC5/FV/OVMF_CODE.fd,readonly=on").unwrap());
     args.push(String::from_str("-drive").unwrap());
-    args.push(String::from_str("if=pflash,format=raw,unit=1,file=/home/w/hd/uefi_fuzz/fuzzer/edk2/Build/OvmfX64/DEBUG_GCC5/FV/OVMF_VARS.fd").unwrap());
+    args.push(String::from_str("if=pflash,format=raw,unit=1,file=/home/w/hd/uefi_fuzz/fuzzer/edk2/Build/OvmfX64/RELEASE_GCC5/FV/OVMF_VARS.fd").unwrap());
     args.push(String::from_str("-hda").unwrap());
     args.push(String::from_str("/home/w/hd/uefi_fuzz/fuzzer/run/smmfuzz.img").unwrap());
     args.push(String::from_str("-debugcon").unwrap());
     args.push(String::from_str("file:debug.log").unwrap());
     args.push(String::from_str("-global").unwrap());
     args.push(String::from_str("isa-debugcon.iobase=0x402").unwrap());
-    args.push(String::from_str("-nographic").unwrap());
+    args.push(String::from_str("-serial").unwrap()); // so that we can ctrl + c
+    args.push(String::from_str("stdio").unwrap());
     args
 }
 
