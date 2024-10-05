@@ -1,3 +1,29 @@
+use std::vec::*;
+use std::string::*;
+pub fn gen_ovmf_qemu_args() -> Vec<String>
+{
+    vec![
+        "qemu-system-x86_64".to_string(),
+        "-machine".to_string(),
+        "q35,smm=on,accel=tcg".to_string(),
+        "-global".to_string(),
+        "driver=cfi.pflash01,property=secure,value=on".to_string(),
+        "-drive".to_string(),
+        "if=pflash,format=raw,unit=0,file=/home/w/hd/uefi_fuzz/fuzzer/edk2/Build/OvmfX64/RELEASE_GCC5/FV/OVMF_CODE.fd,readonly=on".to_string(),
+        "-drive".to_string(),
+        "if=pflash,format=raw,unit=1,file=/home/w/hd/uefi_fuzz/fuzzer/edk2/Build/OvmfX64/RELEASE_GCC5/FV/OVMF_VARS.fd".to_string(),
+        "-hda".to_string(),
+        "/home/w/hd/uefi_fuzz/fuzzer/run/smmfuzz.img".to_string(),
+        "-debugcon".to_string(),
+        "file:debug.log".to_string(),
+        "-global".to_string(),
+        "isa-debugcon.iobase=0x402".to_string(),
+        "-serial".to_string(), // so that we can ctrl + c
+        "stdio".to_string(),
+        "-L".to_string(),
+        "/usr/local/share/qemu_smm/".to_string(),
+    ]
+}
 pub fn get_snapshot_dev_filter_list() -> Vec<String>
 {
     vec![

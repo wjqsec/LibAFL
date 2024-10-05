@@ -17130,12 +17130,14 @@ extern "C" {
 extern "C" {
     pub fn libafl_qemu_remove_breakpoint(pc: target_ulong) -> ::std::os::raw::c_int;
 }
-extern "C" {
-    pub fn libafl_qemu_trigger_breakpoint(cpu: *mut CPUState);
-}
 pub const libafl_exit_reason_kind_INTERNAL: libafl_exit_reason_kind = libafl_exit_reason_kind(0);
 pub const libafl_exit_reason_kind_BREAKPOINT: libafl_exit_reason_kind = libafl_exit_reason_kind(1);
 pub const libafl_exit_reason_kind_SYNC_EXIT: libafl_exit_reason_kind = libafl_exit_reason_kind(2);
+pub const libafl_exit_reason_kind_TIMEOUT: libafl_exit_reason_kind = libafl_exit_reason_kind(3);
+pub const libafl_exit_reason_kind_STREAM_NOTFOUND: libafl_exit_reason_kind =
+    libafl_exit_reason_kind(4);
+pub const libafl_exit_reason_kind_STREAM_OUTOF: libafl_exit_reason_kind =
+    libafl_exit_reason_kind(5);
 impl ::std::ops::BitOr<libafl_exit_reason_kind> for libafl_exit_reason_kind {
     type Output = Self;
     #[inline]
@@ -17445,6 +17447,15 @@ extern "C" {
 }
 extern "C" {
     pub fn libafl_get_exit_reason() -> *mut libafl_exit_reason;
+}
+extern "C" {
+    pub fn libafl_qemu_exit_timeout(cpu: *mut CPUState);
+}
+extern "C" {
+    pub fn libafl_qemu_exit_stream_notfound(cpu: *mut CPUState);
+}
+extern "C" {
+    pub fn libafl_qemu_exit_stream_outof(cpu: *mut CPUState);
 }
 extern "C" {
     pub fn libafl_gen_edge(
@@ -17910,6 +17921,9 @@ extern "C" {
         num: usize,
         invalidate: ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn libafl_qemu_in_smm_mode() -> bool;
 }
 extern "C" {
     pub fn libafl_jit_trace_edge_hitcount(data: u64, id: u64) -> usize;

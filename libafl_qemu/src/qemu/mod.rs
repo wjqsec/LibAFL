@@ -24,7 +24,8 @@ use libafl_qemu_sys::{
     libafl_flush_jit, libafl_get_exit_reason, libafl_page_from_addr, libafl_qemu_add_gdb_cmd,
     libafl_qemu_cpu_index, libafl_qemu_current_cpu, libafl_qemu_gdb_reply, libafl_qemu_get_cpu,
     libafl_qemu_num_cpus, libafl_qemu_num_regs, libafl_qemu_read_reg,libafl_get_first_cpu,
-    libafl_qemu_remove_breakpoint, libafl_qemu_set_breakpoint, libafl_qemu_trigger_breakpoint,
+    libafl_qemu_remove_breakpoint, libafl_qemu_set_breakpoint,
+    libafl_qemu_exit_timeout,libafl_qemu_exit_stream_notfound,libafl_qemu_exit_stream_outof,libafl_qemu_in_smm_mode,
     libafl_qemu_write_reg, CPUArchState, CPUStatePtr, FatPtr, GuestAddr, GuestPhysAddr, GuestUsize,
     GuestVirtAddr,
 };
@@ -319,9 +320,24 @@ impl CPU {
         unsafe { libafl_qemu_cpu_index(self.ptr) as usize }
     }
 
-    pub fn trigger_breakpoint(&self) {
+    pub fn exit_timeout(&self) {
         unsafe {
-            libafl_qemu_trigger_breakpoint(self.ptr);
+            libafl_qemu_exit_timeout(self.ptr);
+        }
+    }
+    pub fn exit_stream_notfound(&self) {
+        unsafe {
+            libafl_qemu_exit_stream_notfound(self.ptr);
+        }
+    }
+    pub fn exit_stream_outof(&self) {
+        unsafe {
+            libafl_qemu_exit_stream_outof(self.ptr);
+        }
+    }
+    pub fn smm_mode(&self) -> bool {
+        unsafe {
+            libafl_qemu_in_smm_mode()
         }
     }
 

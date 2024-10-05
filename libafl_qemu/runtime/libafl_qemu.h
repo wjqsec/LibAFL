@@ -57,8 +57,10 @@ typedef enum LibaflQemuCommand {
   LIBAFL_QEMU_COMMAND_VERSION = 7,
   LIBAFL_QEMU_COMMAND_VADDR_FILTER_ALLOW = 8,
 
+
   LIBAFL_QEMU_COMMAND_SMM_REPORT_NUM_STREAM = 9,
   LIBAFL_QEMU_COMMAND_SMM_INPUT_STREAM_VIRT = 10,
+  LIBAFL_QEMU_COMMAND_SMM_REPORT_DUMMY_MEM = 11,
 } LibaflExit;
 
 typedef enum LibaflQemuEndStatus {
@@ -277,7 +279,7 @@ LIBAFL_DEFINE_FUNCTIONS(backdoor, LIBAFL_BACKDOOR_OPCODE)
 
 #define LIBAFL_QEMU_VERSION() _libafl_sync_exit_call0(LIBAFL_QEMU_COMMAND_VERSION)
 
-
+#define LIBAFL_QEMU_SMM_REPORT_DUMMY_MEM(addr) _libafl_backdoor_call1(LIBAFL_QEMU_COMMAND_SMM_REPORT_DUMMY_MEM,addr)
 #define LIBAFL_QEMU_SMM_REPORT_NUM_STREAM(num) _libafl_backdoor_call1(LIBAFL_QEMU_COMMAND_SMM_REPORT_NUM_STREAM,num)
 #define LIBAFL_QEMU_SMM_INPUT_STREAM_VIRT(stream_id, buf_vaddr, max_len) _libafl_backdoor_call3(LIBAFL_QEMU_COMMAND_SMM_INPUT_STREAM_VIRT,stream_id, buf_vaddr, max_len)
 /* === The public part ends here === */
