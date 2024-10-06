@@ -61,6 +61,11 @@ typedef enum LibaflQemuCommand {
   LIBAFL_QEMU_COMMAND_SMM_REPORT_NUM_STREAM = 9,
   LIBAFL_QEMU_COMMAND_SMM_INPUT_STREAM_VIRT = 10,
   LIBAFL_QEMU_COMMAND_SMM_REPORT_DUMMY_MEM = 11,
+
+  LIBAFL_QEMU_COMMAND_SMM_INIT_ENTER = 12,
+  LIBAFL_QEMU_COMMAND_SMM_INIT_EXIT = 13,
+  LIBAFL_QEMU_COMMAND_SMM_SMI_ENTER = 14,
+  LIBAFL_QEMU_COMMAND_SMM_SMI_EXIT = 15,
 } LibaflExit;
 
 typedef enum LibaflQemuEndStatus {
@@ -74,10 +79,10 @@ typedef enum LibaflQemuEndStatus {
       #ifdef __cplusplus \
         extern "C" { \
       #endif \
-          libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call0(libafl_word action); \
-          libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call1(libafl_word action, \
+          static __attribute__((unused,noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call0(libafl_word action); \
+          static __attribute__((unused,noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call1(libafl_word action, \
                                                         ##name##  libafl_word arg1); \
-          libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call2(libafl_word action, \
+          static __attribute__((unused,noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call2(libafl_word action, \
                                                                    libafl_word arg1, \
                                                                    libafl_word arg2); \
       #ifdef __cplusplus \
@@ -87,7 +92,7 @@ typedef enum LibaflQemuEndStatus {
 
   #if defined(__x86_64__)
     #define LIBAFL_DEFINE_FUNCTIONS(name, opcode)                                                   \
-      __attribute__((noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call0(                                 \
+      static __attribute__((unused,noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call0(                                 \
           libafl_word action) {                                                                     \
         libafl_word ret;                                                                            \
         __asm__ volatile (                                                                        \
@@ -101,7 +106,7 @@ typedef enum LibaflQemuEndStatus {
         return ret;                                                                                 \
       }                                                                                             \
                                                                                                     \
-      __attribute__((noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call1(                                 \
+      static __attribute__((unused,noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call1(                                 \
           libafl_word action, libafl_word arg1) {                                                   \
         libafl_word ret;                                                                            \
         __asm__ volatile (                                                                        \
@@ -116,7 +121,7 @@ typedef enum LibaflQemuEndStatus {
         return ret;                                                                                 \
       }                                                                                             \
                                                                                                     \
-      __attribute__((noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call2(                                 \
+       static __attribute__((unused,noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call2(                                 \
           libafl_word action, libafl_word arg1, libafl_word arg2) {                                 \
         libafl_word ret;                                                                            \
         __asm__ volatile (                                                                        \
@@ -131,7 +136,7 @@ typedef enum LibaflQemuEndStatus {
         ); \
         return ret;                                                                                 \
       }                                                                                             \
-      __attribute__((noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call3(                                 \
+       static __attribute__((unused,noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call3(                                 \
           libafl_word action, libafl_word arg1, libafl_word arg2,libafl_word arg3) {                 \
         libafl_word ret;                                                                            \
         __asm__ volatile (                                                                        \
@@ -150,7 +155,7 @@ typedef enum LibaflQemuEndStatus {
         
   #elif defined(__arm__)
     #define LIBAFL_DEFINE_FUNCTIONS(name, opcode)                                                   \
-      __attribute__((noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call0(                                 \
+      static __attribute__((unused,noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call0(                                 \
           libafl_word action) {                                                                     \
         libafl_word ret;                                                                            \
         __asm__ volatile (                                                                        \
@@ -164,7 +169,7 @@ typedef enum LibaflQemuEndStatus {
         return ret;                                                                                 \
       }                                                                                             \
                                                                                                     \
-      __attribute__((noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call1(                                 \
+      static __attribute__((unused,noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call1(                                 \
           libafl_word action, libafl_word arg1) {                                                   \
         libafl_word ret;                                                                            \
         __asm__ volatile (                                                                      \
@@ -179,7 +184,7 @@ typedef enum LibaflQemuEndStatus {
         return ret;                                                                                 \
       }                                                                                             \
                                                                                                     \
-      __attribute__((noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call2(                                 \
+      static __attribute__((unused,noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call2(                                 \
           libafl_word action, libafl_word arg1, libafl_word arg2) {                                 \
         libafl_word ret;                                                                            \
         __asm__ volatile (                                                                      \
@@ -197,7 +202,7 @@ typedef enum LibaflQemuEndStatus {
 
   #elif defined(__aarch64__)
     #define LIBAFL_DEFINE_FUNCTIONS(name, opcode)                                                   \
-      __attribute__((noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call0(                                 \
+      static __attribute__((unused,noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call0(                                 \
           libafl_word action) {                                                                     \
         libafl_word ret;                                                                            \
         __asm__ volatile (                                                                        \
@@ -211,7 +216,7 @@ typedef enum LibaflQemuEndStatus {
         return ret;                                                                                 \
       }                                                                                             \
                                                                                                     \
-      __attribute__((noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call1(                                 \
+      static __attribute__((unused,noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call1(                                 \
           libafl_word action, libafl_word arg1) {                                                   \
         libafl_word ret;                                                                            \
         __asm__ volatile (                                                                      \
@@ -226,7 +231,7 @@ typedef enum LibaflQemuEndStatus {
         return ret;                                                                                 \
       }                                                                                             \
                                                                                                     \
-      __attribute__((noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call2(                                 \
+      static __attribute__((unused,noinline)) libafl_word LIBAFL_CALLING_CONVENTION _libafl_##name##_call2(                                 \
           libafl_word action, libafl_word arg1, libafl_word arg2) {                                 \
         libafl_word ret;                                                                            \
         __asm__ volatile (                                                                      \
@@ -282,6 +287,10 @@ LIBAFL_DEFINE_FUNCTIONS(backdoor, LIBAFL_BACKDOOR_OPCODE)
 #define LIBAFL_QEMU_SMM_REPORT_DUMMY_MEM(addr) _libafl_backdoor_call1(LIBAFL_QEMU_COMMAND_SMM_REPORT_DUMMY_MEM,addr)
 #define LIBAFL_QEMU_SMM_REPORT_NUM_STREAM(num) _libafl_backdoor_call1(LIBAFL_QEMU_COMMAND_SMM_REPORT_NUM_STREAM,num)
 #define LIBAFL_QEMU_SMM_INPUT_STREAM_VIRT(stream_id, buf_vaddr, max_len) _libafl_backdoor_call3(LIBAFL_QEMU_COMMAND_SMM_INPUT_STREAM_VIRT,stream_id, buf_vaddr, max_len)
+#define LIBAFL_QEMU_SMM_INIT_ENTER() _libafl_backdoor_call0(LIBAFL_QEMU_COMMAND_SMM_INIT_ENTER)
+#define LIBAFL_QEMU_SMM_INIT_EXIT() _libafl_backdoor_call0(LIBAFL_QEMU_COMMAND_SMM_INIT_EXIT)
+#define LIBAFL_QEMU_SMM_SMI_ENTER() _libafl_backdoor_call0(LIBAFL_QEMU_COMMAND_SMM_SMI_ENTER)
+#define LIBAFL_QEMU_SMM_SMI_EXIT() _libafl_backdoor_call0(LIBAFL_QEMU_COMMAND_SMM_SMI_EXIT)
 /* === The public part ends here === */
 
 #endif

@@ -1,59 +1,34 @@
 use core::{ptr::addr_of_mut, time::Duration};
-use std::borrow::Borrow;
 use std::cell::UnsafeCell;
-use std::mem::transmute;
-use std::str::FromStr;
-use std::{cell::RefCell, collections::HashMap, env, fmt::format, path::PathBuf, process, rc::Rc, vec};
-use std::ptr::copy;
-use rand::Rng;
-use std::slice;
-use std::process::{Command, exit};
+use std::{path::PathBuf, process};
 use log::*;
 use libafl::{
-    corpus::{Corpus, InMemoryCorpus, OnDiskCorpus}, events::{launcher::Launcher, EventConfig}, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, HasMutatorBytes, HasTargetBytes, Input}, monitors::MultiMonitor, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, CachedOnDiskCorpus, IfStage, PowerQueueScheduler, SimpleEventManager, SimpleMonitor}, schedulers::{IndexesLenTimeMinimizerScheduler, QueueScheduler}, stages::StdMutationalStage, state::{HasCorpus, StdState}, Error
+    corpus::Corpus, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, CachedOnDiskCorpus, PowerQueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
 };
-use libafl::prelude::{ColorizationStage,TracingStage};
-use libafl::prelude::InMemoryOnDiskCorpus;
-use libafl::state::HasCurrentTestcase;
 use libafl_bolts::tuples::MatchNameRef;
-use libafl::executors::inprocess::InProcessExecutor;
 use libafl::feedbacks::stream::StreamFeedback;
-use libafl_qemu::modules::cmplog::CmpLogObserver;
 use libafl::inputs::multi::MultipartInput;
 use std::sync::{Arc, Mutex};
-use libafl::stages::mutational::MultiMutationalStage;
-use libafl::prelude::AFLppRedQueen;
 use libafl_bolts::{
-    core_affinity::Cores,
     current_nanos,
-    os::unix_signals::{Signal, CTRL_C_EXIT},
     ownedref::OwnedMutSlice,
     rands::StdRand,
-    shmem::{ShMemProvider, StdShMemProvider},
-    tuples::{tuple_list, Handled},
-    AsSlice, AsSliceMut, HasLen,
+    shmem::ShMemProvider,
+    tuples::tuple_list,
 };
 use once_cell::sync::Lazy;
 use libafl_qemu::{
-    command::NopCommandManager, elf::EasyElf, executor::{stateful::StatefulQemuExecutor, QemuExecutorState}, modules::edges::{
+    command::NopCommandManager, executor::{stateful::StatefulQemuExecutor, QemuExecutorState}, modules::edges::{
         edges_map_mut_ptr, EdgeCoverageModule, EDGES_MAP_SIZE_IN_USE, MAX_EDGES_FOUND,
-    }, Emulator, NopEmulatorExitHandler, PostDeviceregReadHookId, PreDeviceregWriteHookId, Qemu, QemuExitError, QemuExitReason, QemuRWError, QemuShutdownCause, Regs
+    }, Emulator, NopEmulatorExitHandler, PostDeviceregReadHookId, PreDeviceregWriteHookId, Qemu, QemuExitReason, Regs
 };
-use libafl_qemu_sys::GuestPhysAddr;
-use libafl_qemu_sys::{CPUArchStatePtr, FatPtr, GuestAddr, GuestUsize};
-use libafl_qemu::modules::cmplog::CmpLogModule;
-use libafl_qemu::executor::QemuExecutor;
+use libafl_qemu_sys::GuestAddr;
 use libafl_qemu::Hook;
 use libafl_qemu::modules::edges::gen_hashed_block_ids;
 use libafl_qemu::GuestReg;
 use libafl_qemu::qemu::BlockHookId;
-use libafl_qemu::sync_exit::ExitArgs;
 use libafl_qemu::CPU;
-use libafl_qemu::SnapshotManager;
-use libafl_qemu::QemuSnapshotManager;
-use libafl_qemu::IsSnapshotManager;
 use libafl_qemu::DeviceSnapshotFilter;
-use libafl_qemu::QemuMemoryChunk;
 use libafl_qemu::FastSnapshotPtr;
 use crate::stream_input::*;
 use crate::qemu_args::*;
@@ -101,18 +76,18 @@ pub fn init_fuzz(qemu : Qemu) -> FastSnapshotPtr {
     let snap = emulator.create_fast_snapshot_filter(true,&dev_filter);
 
 
-    let block_id : BlockHookId = emulator.modules_mut().blocks(Hook::Function(gen_hashed_block_ids::<_, _>), Hook::Empty, 
-    Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
-            let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
-            let eax : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
-            let rdi : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
-            trace!("bbl-> {pc:#x} {eax:#x} {rdi:#x}");
-            if get_exec_count() > INIT_PHASE_NUM_TIMEOUT_BBL {
-                cpu.exit_timeout();
-            }
-            set_exec_count(get_exec_count() + 1);
+    // let block_id : BlockHookId = emulator.modules_mut().blocks(Hook::Function(gen_hashed_block_ids::<_, _>), Hook::Empty, 
+    // Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
+    //         let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
+    //         let eax : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
+    //         let rdi : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
+    //         trace!("bbl-> {pc:#x} {eax:#x} {rdi:#x}");
+    //         if get_exec_count() > INIT_PHASE_NUM_TIMEOUT_BBL {
+    //             cpu.exit_timeout();
+    //         }
+    //         set_exec_count(get_exec_count() + 1);
                 
-    })));
+    // })));
     let devread_id : PostDeviceregReadHookId = emulator.modules_mut().devread(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32| {
         let fuzz_input = unsafe {&mut (**GLOB_INPUT.get()) };
         let qemu: Qemu = modules.qemu();
@@ -145,9 +120,9 @@ pub fn init_fuzz(qemu : Qemu) -> FastSnapshotPtr {
             *GLOB_INPUT.get() = (&mut inputs) as *mut StreamInputs;
         }
 
-        let mut in_simulator = state.emulator_mut();
-        let mut in_qemu = in_simulator.qemu();
-        let mut in_cpu = in_qemu.first_cpu().unwrap();
+        let in_simulator = state.emulator_mut();
+        let in_qemu = in_simulator.qemu();
+        let in_cpu = in_qemu.first_cpu().unwrap();
         let exit_reason;
         let exit_code;
         unsafe {
@@ -174,7 +149,9 @@ pub fn init_fuzz(qemu : Qemu) -> FastSnapshotPtr {
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason
             {
-                exit_code = ExitKind::Crash;
+                debug!("qemu_run_to_end qemu end");
+                exit_elegantly();
+                exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason
             {
@@ -260,7 +237,7 @@ pub fn init_fuzz(qemu : Qemu) -> FastSnapshotPtr {
     let mutator = StdScheduledMutator::new(havoc_mutations());
     let mut stages = tuple_list!(StdMutationalStage::new(mutator));
 
-    while true {
+    loop {
         fuzzer
             .fuzz_one(&mut stages, &mut executor, &mut state, &mut mgr)
             .unwrap();

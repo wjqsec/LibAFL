@@ -1,7 +1,6 @@
 use libafl::inputs::multi::MultipartInput;
 use libafl::inputs::BytesInput;
 use std::collections::BTreeMap;
-use log::*;
 use std::error::Error;
 use libafl_qemu::QemuMemoryChunk;
 use crate::sparse_memory::*;
@@ -121,7 +120,7 @@ impl StreamInputs {
     pub fn write_dram(&mut self, addr : u64, data : Vec<u8>) {
         self.sparse_memory.write(addr, data);
     }
-    pub fn write_comm_buf(&mut self, qemu : Qemu, comm_id : u64, addr : u64, max_size : u64)-> Result<(usize), StreamError> {
+    pub fn write_comm_buf(&mut self, qemu : Qemu, comm_id : u64, addr : u64, max_size : u64)-> Result<usize, StreamError> {
         let id = (comm_id as u128) | COMMBUF_STREAM_MASK;
         match self.inputs.entry(id) {
             std::collections::btree_map::Entry::Occupied(entry) => {

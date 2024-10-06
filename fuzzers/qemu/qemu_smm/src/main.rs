@@ -9,17 +9,9 @@ mod stream_input;
 mod common_hooks;
 mod config;
 use crate::qemu_args::*;
-use crate::sparse_memory::*;
-use crate::cpu_hooks::*;
-use crate::exit_qemu::*;
 use crate::init_fuzz_phase::*;
-use crate::smm_fuzz_phase::*;
 
-use crate::stream_input::*;
-use crate::common_hooks::*;
 
-use log::*;
-use std::vec;
 use libafl_qemu::Qemu;
 use std::env;
 // static mut GLOB_INPUT : UnsafeCell<*mut HashMap<u128,StreamInput>> = UnsafeCell::new(std::ptr::null_mut() as *mut HashMap<u128,StreamInput>);
@@ -72,7 +64,7 @@ fn main() {
     env_logger::init();
     let args: Vec<String> = gen_ovmf_qemu_args();
     let env: Vec<(String, String)> = env::vars().collect();
-    let mut qemu = Qemu::init(args.as_slice(),env.as_slice()).unwrap();
+    let qemu = Qemu::init(args.as_slice(),env.as_slice()).unwrap();
 
 
     let smm_fuzz_snapshot = init_fuzz(qemu);

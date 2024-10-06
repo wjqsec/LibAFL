@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use log::*;
 use std::error::Error;
 use std::fmt;
 pub struct SparseMemory {
