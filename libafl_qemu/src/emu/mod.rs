@@ -74,6 +74,9 @@ where
     QemuExit(QemuShutdownCause), // QEMU ended for some reason.
     Breakpoint(Rc<RefCell<Breakpoint<CM, EH, ET, S>>>), // Breakpoint triggered. Contains the address of the trigger.
     SyncExit(Rc<RefCell<SyncExit<CM, EH, ET, S>>>), // Synchronous backdoor: The guest triggered a backdoor and should return to LibAFL.
+    Timeout,
+    StreamNotFound,
+    StreamOutof,
 }
 
 #[derive(Debug, Clone)]
@@ -409,6 +412,9 @@ where
                     let command = sync_backdoor.command();
                     (Some(command), Some(sync_backdoor.ret_reg()))
                 }
+                _ => {
+                    (None,None)
+                }
             };
 
         // manually drop ref cell here to avoid keeping it alive in cmd.
@@ -448,6 +454,9 @@ where
             EmulatorExitResult::SyncExit(sync_exit) => {
                 write!(f, "Sync exit: {}", sync_exit.borrow())
             }
+            EmulatorExitResult::Timeout => write!(f, "Timeout"),
+            EmulatorExitResult::StreamNotFound => write!(f, "StreamNotFound"),
+            EmulatorExitResult::StreamOutof => write!(f, "StreamOutof"),
         }
     }
 }
@@ -724,6 +733,15 @@ where
                 QemuExitReason::SyncExit => EmulatorExitResult::SyncExit(Rc::new(RefCell::new(
                     SyncExit::new(self.command_manager.parse(self.qemu)?),
                 ))),
+                QemuExitReason::Timeout => {
+                    EmulatorExitResult::Timeout
+                }
+                QemuExitReason::StreamNotFound => {
+                    EmulatorExitResult::StreamNotFound
+                }
+                QemuExitReason::StreamOutof => {
+                    EmulatorExitResult::StreamOutof
+                },
             }),
             Err(qemu_exit_reason_error) => Err(match qemu_exit_reason_error {
                 QemuExitError::UnexpectedExit => EmulatorExitError::UnexpectedExit,

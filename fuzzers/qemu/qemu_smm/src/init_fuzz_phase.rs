@@ -1,6 +1,7 @@
 use core::{ptr::addr_of_mut, time::Duration};
 use std::cell::UnsafeCell;
 use std::{path::PathBuf, process};
+use libafl_bolts::math;
 use log::*;
 use libafl::{
     corpus::Corpus, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, CachedOnDiskCorpus, PowerQueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
@@ -23,33 +24,32 @@ use libafl_qemu::{
     }, Emulator, NopEmulatorExitHandler, PostDeviceregReadHookId, PreDeviceregWriteHookId, Qemu, QemuExitReason, Regs
 };
 use libafl_qemu_sys::GuestAddr;
-use libafl_qemu::Hook;
+use libafl_qemu::{emu, Hook};
 use libafl_qemu::modules::edges::gen_hashed_block_ids;
 use libafl_qemu::GuestReg;
 use libafl_qemu::qemu::BlockHookId;
 use libafl_qemu::CPU;
 use libafl_qemu::DeviceSnapshotFilter;
 use libafl_qemu::FastSnapshotPtr;
+use libafl_qemu::command::CommandManager;
+use libafl_qemu::EmulatorExitHandler;
+use libafl_qemu::modules::EmulatorModuleTuple;
+use libafl::prelude::State;
+use libafl::prelude::HasExecutions;
+use std::env;
 use crate::stream_input::*;
 use crate::qemu_args::*;
 use crate::common_hooks::*;
 use crate::config::*;
 use crate::exit_qemu::*;
+use crate::fuzzer_snapshot::*;
+
 static mut GLOB_INPUT : UnsafeCell<*mut StreamInputs> = UnsafeCell::new(std::ptr::null_mut() as *mut StreamInputs);
-static mut EXEC_COUNT : UnsafeCell<u64> = UnsafeCell::new(0);
-static NEW_STREAM : Lazy<Arc<Mutex<Vec<u128>>>> = Lazy::new( || Arc::new(Mutex::new(Vec::new())) );
-static mut SMM_FUZZ_SNAPSHOT : UnsafeCell<Option<FastSnapshotPtr>> = UnsafeCell::new(None);
+
+static mut SMM_INIT_FUZZ_EXIT_SNAPSHOT : UnsafeCell<Option<FuzzerSnapshot>> = UnsafeCell::new(None);
 
 
 
-fn get_exec_count() -> u64  {
-    let exec_count;
-    unsafe { exec_count =  *EXEC_COUNT.get(); }
-    exec_count
-}
-fn set_exec_count(val :u64) {
-    unsafe { *EXEC_COUNT.get() =  val; }
-}
 
 fn gen_init_random_seed(corpus_dirs : &PathBuf) {
     let mut initial_input = MultipartInput::<BytesInput>::new();
@@ -60,69 +60,31 @@ fn gen_init_random_seed(corpus_dirs : &PathBuf) {
     initial_input.to_file(init_seed_path).unwrap();
 }
 
-pub fn init_fuzz(qemu : Qemu) -> FastSnapshotPtr {
+
+pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, ()), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>, snap : FuzzerSnapshot) -> SnapshotKind 
+{
+    unsafe {
+        *SMM_INIT_FUZZ_EXIT_SNAPSHOT.get() = None;
+        *GLOB_INPUT.get() = std::ptr::null_mut() as *mut StreamInputs;
+    }
+
     let corpus_dirs = [PathBuf::from(INIT_PHASE_CORPUS_DIR)];
     let objective_dir = PathBuf::from(INIT_PHASE_SOLUTION_DIR);
-
     gen_init_random_seed(&corpus_dirs[0]);
 
-    let mut emulator = Emulator::new_with_qemu(qemu,
-        tuple_list!(EdgeCoverageModule::default()),
-        NopEmulatorExitHandler,
-        NopCommandManager)
-        .unwrap();
-    let cpu: CPU = qemu.first_cpu().unwrap();
-    let dev_filter = DeviceSnapshotFilter::DenyList(get_snapshot_dev_filter_list());
-    let snap = emulator.create_fast_snapshot_filter(true,&dev_filter);
-
-
-    // let block_id : BlockHookId = emulator.modules_mut().blocks(Hook::Function(gen_hashed_block_ids::<_, _>), Hook::Empty, 
-    // Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
-    //         let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
-    //         let eax : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
-    //         let rdi : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
-    //         trace!("bbl-> {pc:#x} {eax:#x} {rdi:#x}");
-    //         if get_exec_count() > INIT_PHASE_NUM_TIMEOUT_BBL {
-    //             cpu.exit_timeout();
-    //         }
-    //         set_exec_count(get_exec_count() + 1);
-                
-    // })));
-    let devread_id : PostDeviceregReadHookId = emulator.modules_mut().devread(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32| {
-        let fuzz_input = unsafe {&mut (**GLOB_INPUT.get()) };
-        let qemu: Qemu = modules.qemu();
-        let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
-        post_io_read_common(pc , base , offset ,size , data , handled,fuzz_input ,qemu);
-
-    })));
-    let devwrite_id : PreDeviceregWriteHookId = emulator.modules_mut().devwrite(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool| {
-        let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
-        pre_io_write_common(pc, base, offset,size , data , handled);
-    })));
-    let memrw_id = emulator.modules_mut().memrw(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr | {
-        pre_memrw_common(pc, addr, size, out_addr);
-    })));
-    let backdoor_id = emulator.modules_mut().backdoor(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, addr : GuestAddr| {
-        let qemu = modules.qemu();
-        let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
-        let cmd : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
-        let arg1 : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
-        let arg2 : GuestReg = cpu.read_reg(Regs::Rsi).unwrap();
-        let arg3 : GuestReg = cpu.read_reg(Regs::Rdx).unwrap();
-        backdoor_common(qemu, cmd, arg1, arg2, arg3);
-    })));
-
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
-        debug!("new run");
+        
         set_exec_count(0);
+        info!("new run");
         let mut inputs = StreamInputs::from_multiinput(input);
         unsafe {  
             *GLOB_INPUT.get() = (&mut inputs) as *mut StreamInputs;
         }
-
         let in_simulator = state.emulator_mut();
-        let in_qemu = in_simulator.qemu();
+        let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu = in_qemu.first_cpu().unwrap();
+        snap.restore_fuzz_snapshot(in_qemu);
+
         let exit_reason;
         let exit_code;
         unsafe {
@@ -130,53 +92,63 @@ pub fn init_fuzz(qemu : Qemu) -> FastSnapshotPtr {
         }
         if let Ok(qemu_exit_reason) = exit_reason
         {
-            if let QemuExitReason::SyncExit = qemu_exit_reason
-            {
-                let cmd : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
-                let arg1 : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
-                debug!("qemu_run_to_end sync exit {:#x} {:#x}",cmd,arg1);
-                if cmd == 6 {
-                    let dev_filter = DeviceSnapshotFilter::DenyList(get_snapshot_dev_filter_list());
-                    unsafe {
-                        *SMM_FUZZ_SNAPSHOT.get() = Some(in_simulator.create_fast_snapshot_filter(true,&dev_filter));
+            if let QemuExitReason::SyncExit = qemu_exit_reason  {
+                let cmd : GuestReg = in_cpu.read_reg(Regs::Rax).unwrap();
+                let arg1 : GuestReg = in_cpu.read_reg(Regs::Rdi).unwrap();
+                let pc : GuestReg = in_cpu.read_reg(Regs::Rip).unwrap();
+                info!("qemu_run_to_end sync exit {:#x} {:#x} {:#x}",cmd,arg1,pc);
+                if cmd == 4 {
+                    match arg1 {
+                        2 => {
+                            exit_code = ExitKind::Crash;
+                        },
+                        4 => {
+                            unsafe {
+                                if (*SMM_INIT_FUZZ_EXIT_SNAPSHOT.get()).is_none() {
+                                    *SMM_INIT_FUZZ_EXIT_SNAPSHOT.get() = Some(FuzzerSnapshot::from_qemu(in_qemu));
+                                }
+                            }
+                            exit_code = ExitKind::Ok;
+                        },
+                        _ => {
+                            exit_elegantly();
+                            exit_code = ExitKind::Ok;
+                        }
                     }
-                    exit_code = ExitKind::Ok;
                 }
                 else {
-                    exit_code = ExitKind::Crash;
+                    exit_elegantly();
+                    exit_code = ExitKind::Ok;
                 }
-                
             }
-            else if let QemuExitReason::End(_) = qemu_exit_reason
-            {
-                debug!("qemu_run_to_end qemu end");
+            else if let QemuExitReason::Timeout = qemu_exit_reason {
+                exit_code = ExitKind::Ok;
+            }
+            else if let QemuExitReason::StreamNotFound = qemu_exit_reason {
+                exit_code = ExitKind::Ok;
+            }
+            else if let QemuExitReason::StreamOutof = qemu_exit_reason {
+                exit_code = ExitKind::Ok;
+            }
+            else if let QemuExitReason::End(_) = qemu_exit_reason {
                 exit_elegantly();
                 exit_code = ExitKind::Ok;
             }
-            else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason
-            {
-                debug!("qemu_run_to_end qemu breakpoint");
-                exit_code = ExitKind::Crash;
+            else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason {
+                exit_elegantly();
+                exit_code = ExitKind::Ok;
             }
-            else
-            {
-                debug!("qemu_run_to_end qemu exit error");
+            else {
                 exit_elegantly();
                 exit_code = ExitKind::Ok;
             }
         }
-        else
-        {
-            debug!("qemu_run_to_end get qemu exit reason error");
+        else    {
             exit_elegantly();
             exit_code = ExitKind::Ok;
         }
-        unsafe {
-            in_simulator.restore_fast_snapshot(snap);
-        }
         
-
-
+            
         exit_code
     };
     let mut edges_observer = unsafe {
@@ -208,14 +180,16 @@ pub fn init_fuzz(qemu : Qemu) -> FastSnapshotPtr {
         &mut objective,
     ).unwrap();
 
-    let mon = SimpleMonitor::new(|s| info!("{s}"));
+    let mon = SimpleMonitor::new(|s| 
+        trace!("{s}")  ////////////////////
+    );
     let mut mgr = SimpleEventManager::new(mon);
     let scheduler = PowerQueueScheduler::new(&mut state, &mut edges_observer, PowerSchedule::FAST);
     let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
 
 
     let mut executor = StatefulQemuExecutor::new(
-        &mut emulator,
+        emulator,
         &mut harness,
         tuple_list!(edges_observer, time_observer,stream_observer),
         &mut fuzzer,
@@ -237,16 +211,42 @@ pub fn init_fuzz(qemu : Qemu) -> FastSnapshotPtr {
     let mutator = StdScheduledMutator::new(havoc_mutations());
     let mut stages = tuple_list!(StdMutationalStage::new(mutator));
 
+    
     loop {
-        fuzzer
-            .fuzz_one(&mut stages, &mut executor, &mut state, &mut mgr)
-            .unwrap();
         unsafe {
-            if let Some(s) = *SMM_FUZZ_SNAPSHOT.get() {
+            if (*SMM_INIT_FUZZ_EXIT_SNAPSHOT.get()).is_some() {
                 break;
             }
         }
+        fuzzer
+            .fuzz_one(&mut stages, &mut executor, &mut state, &mut mgr)
+            .unwrap();
     }
-    return unsafe { (*SMM_FUZZ_SNAPSHOT.get()).unwrap() };
+    let exit_snapshot = unsafe { (*SMM_INIT_FUZZ_EXIT_SNAPSHOT.get()).as_ref().unwrap() };
+    exit_snapshot.restore_fuzz_snapshot(emulator.qemu());
+    let exit_reason;
+    unsafe {
+        exit_reason = emulator.qemu().run();
+    }
+    if let Ok(ref qemu_exit_reason) = exit_reason {
+        if let QemuExitReason::SyncExit = qemu_exit_reason {
+            let cmd : GuestReg = emulator.qemu().first_cpu().unwrap().read_reg(Regs::Rax).unwrap();
+            let arg1 : GuestReg = emulator.qemu().first_cpu().unwrap().read_reg(Regs::Rdi).unwrap();
+            info!("init phase fuzz return {:?} {:?} {:?}",exit_reason,cmd,arg1);
+            if cmd == 4 {
+                if arg1 == 3 {
+                    return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(emulator.qemu()));
+                }
+                else if arg1 == 5 {
+                    return SnapshotKind::StartOfSmmFuzzSnap(FuzzerSnapshot::from_qemu(emulator.qemu()));
+                }
+            }
+            
+        }
+        
+    }
+    
+    exit_elegantly();
+    SnapshotKind::None
 
 }

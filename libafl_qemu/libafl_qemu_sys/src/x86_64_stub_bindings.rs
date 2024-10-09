@@ -17449,6 +17449,9 @@ extern "C" {
     pub fn libafl_get_exit_reason() -> *mut libafl_exit_reason;
 }
 extern "C" {
+    pub fn libafl_qemu_trigger_breakpoint(cpu: *mut CPUState);
+}
+extern "C" {
     pub fn libafl_qemu_exit_timeout(cpu: *mut CPUState);
 }
 extern "C" {

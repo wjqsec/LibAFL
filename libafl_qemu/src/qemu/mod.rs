@@ -62,6 +62,9 @@ pub enum QemuExitReason {
     End(QemuShutdownCause), // QEMU ended for some reason.
     Breakpoint(GuestAddr),  // Breakpoint triggered. Contains the address of the trigger.
     SyncExit, // Synchronous backdoor: The guest triggered a backdoor and should return to LibAFL.
+    Timeout,
+    StreamNotFound,
+    StreamOutof,
 }
 
 #[derive(Debug, Clone)]
@@ -238,6 +241,9 @@ impl Display for QemuExitReason {
             QemuExitReason::End(shutdown_cause) => write!(f, "End: {shutdown_cause:?}"),
             QemuExitReason::Breakpoint(bp) => write!(f, "Breakpoint: {bp}"),
             QemuExitReason::SyncExit => write!(f, "Sync Exit"),
+            QemuExitReason::Timeout => write!(f, "Timeout"),
+            QemuExitReason::StreamNotFound => write!(f, "StreamNotFound"),
+            QemuExitReason::StreamOutof => write!(f, "StreamOutof"),
         }
     }
 }
@@ -676,6 +682,9 @@ impl Qemu {
                     QemuExitReason::Breakpoint(bp_addr)
                 },
                 libafl_qemu_sys::libafl_exit_reason_kind_SYNC_EXIT => QemuExitReason::SyncExit,
+                libafl_qemu_sys::libafl_exit_reason_kind_TIMEOUT => QemuExitReason::Timeout,
+                libafl_qemu_sys::libafl_exit_reason_kind_STREAM_NOTFOUND => QemuExitReason::StreamNotFound,
+                libafl_qemu_sys::libafl_exit_reason_kind_STREAM_OUTOF => QemuExitReason::StreamOutof,
                 _ => return Err(QemuExitError::UnknownKind),
             })
         }
