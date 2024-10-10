@@ -220,7 +220,7 @@ impl Qemu {
         unsafe {
             libafl_qemu_sys::syx_snapshot_new(
                 track,
-                true,
+                false,
                 libafl_qemu_sys::DeviceSnapshotKind_DEVICE_SNAPSHOT_ALL,
                 null_mut(),
             )
@@ -237,7 +237,7 @@ impl Qemu {
         unsafe {
             libafl_qemu_sys::syx_snapshot_new(
                 track,
-                true,
+                false,
                 device_filter.enum_id(),
                 device_filter.devices(&mut v),
             )

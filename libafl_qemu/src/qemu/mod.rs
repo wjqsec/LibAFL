@@ -581,7 +581,7 @@ impl Qemu {
             {
                 qemu_init(argc, argv.as_ptr(), envp.as_ptr());
                 libc::atexit(qemu_cleanup_atexit);
-                libafl_qemu_sys::syx_snapshot_init(true);
+                libafl_qemu_sys::syx_snapshot_init(false);
             }
         }
 
