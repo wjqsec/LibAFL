@@ -8,12 +8,15 @@ mod smm_fuzz_phase;
 mod stream_input;
 mod common_hooks;
 mod config;
+mod qemu_control;
 mod fuzzer_snapshot;
 use core::{ptr::addr_of_mut, time::Duration};
 use std::cell::UnsafeCell;
 use std::process::exit;
 use std::{path::PathBuf, process};
 use log::*;
+use qemu_control::qemu_run_once;
+use std::fs;
 use libafl::{
     corpus::Corpus, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, CachedOnDiskCorpus, PowerQueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
 };
@@ -60,6 +63,10 @@ use std::thread;
 #[allow(clippy::too_many_lines)]
 fn main() {
     env_logger::init();
+
+    fs::create_dir_all(INIT_PHASE_CORPUS_DIR).unwrap();
+    fs::create_dir_all(INIT_PHASE_SOLUTION_DIR).unwrap();
+
     let args: Vec<String> = gen_ovmf_qemu_args();
     let env: Vec<(String, String)> = env::vars().collect();
     let qemu: Qemu = Qemu::init(args.as_slice(),env.as_slice()).unwrap();
@@ -70,35 +77,17 @@ fn main() {
         .unwrap();
 
     
-    // let backdoor_id = emulator.modules_mut().backdoor(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, addr : GuestAddr| {
-    //     backdoor_common(modules.qemu().first_cpu().unwrap());
-    // })));
+    let backdoor_id = emulator.modules_mut().backdoor(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, addr : GuestAddr| {
+        backdoor_common(modules.qemu().first_cpu().unwrap());
+    })));
 
     unsafe {
-        let first_exit = qemu.run();
-        // let cmd : GuestReg = qemu.first_cpu().unwrap().read_reg(Regs::Rax).unwrap();
-        // let arg1 : GuestReg = qemu.first_cpu().unwrap().read_reg(Regs::Rdi).unwrap();
-        // let pc : GuestReg = qemu.first_cpu().unwrap().read_reg(Regs::Rip).unwrap();
-        // info!("first exit <{:?}> {cmd} {arg1} {:#x}",first_exit,pc);
+        let first_exit = qemu_run_once(qemu, &FuzzerSnapshot::new_empty());
+        let cmd : GuestReg = qemu.first_cpu().unwrap().read_reg(Regs::Rax).unwrap();
+        let arg1 : GuestReg = qemu.first_cpu().unwrap().read_reg(Regs::Rdi).unwrap();
+        let pc : GuestReg = qemu.first_cpu().unwrap().read_reg(Regs::Rip).unwrap();
+        info!("first exit <{:?}> {cmd} {arg1} {:#x}",first_exit,pc);
     }
-    let dev_filter = DeviceSnapshotFilter::DenyList(get_snapshot_dev_filter_list());
-    let qemu_snap = emulator.create_fast_snapshot_filter(true, &dev_filter);
-
-    unsafe {
-        emulator.restore_fast_snapshot(qemu_snap);
-        qemu.run();
-        qemu.restore_fast_snapshot(qemu_snap);
-        qemu.run();
-        qemu.restore_fast_snapshot(qemu_snap);
-        qemu.run();
-        qemu.restore_fast_snapshot(qemu_snap);
-        qemu.run();
-        qemu.restore_fast_snapshot(qemu_snap);
-        qemu.run();
-        qemu.restore_fast_snapshot(qemu_snap);
-    }
-
-    exit_elegantly();
 
 
     let mut snapshot = SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
@@ -118,36 +107,32 @@ fn main() {
     //     pre_memrw_init_fuzz_phase(pc, addr, size, out_addr);
     // })));
     // fuzz module init function one by one
-    let mut snap;
+
     loop {
-        snap = match snapshot {
+        snapshot = init_phase_fuzz::<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, ()), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>(&mut emulator ,snapshot);
+        match snapshot {
             SnapshotKind::None => { 
                 error!("got None"); 
                 exit_elegantly();
-                FuzzerSnapshot::new_empty()
             },
-            SnapshotKind::StartOfUefiSnap(ref snap) => { 
+            SnapshotKind::StartOfUefiSnap(_) => { 
                 error!("got StartOfUefi"); 
                 exit_elegantly();
-                FuzzerSnapshot::new_empty()
             },
-            SnapshotKind::StartOfSmmInitSnap(ref snap) => { 
+            SnapshotKind::StartOfSmmInitSnap(_) => { 
                 info!("passed one module");
-                FuzzerSnapshot::from_snap(snap)
             },
-            SnapshotKind::EndOfSmmInitSnap(ref snap) => { 
+            SnapshotKind::EndOfSmmInitSnap(_) => { 
                 error!("got EndOfSmmInitSnap"); 
                 exit_elegantly();
-                FuzzerSnapshot::new_empty()
             },
-            SnapshotKind::StartOfSmmFuzzSnap(ref snap) => { 
+            SnapshotKind::StartOfSmmFuzzSnap(_) => { 
                 break; 
             },
         };
-        snapshot = init_phase_fuzz::<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, ()), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>(&mut emulator ,snap);
-        
     }
-    
+    info!("finish init phase fuzzing!");
+    exit_elegantly();
     
     // qemu_run_til_start(&mut qemu, &mut current_cpu);
     // let devices = qemu.list_devices();

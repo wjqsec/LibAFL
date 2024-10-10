@@ -23,7 +23,7 @@ pub enum SnapshotKind {
 impl FuzzerSnapshot {
     pub fn from_qemu(qemu : Qemu) -> Self {
         let dev_filter = DeviceSnapshotFilter::DenyList(get_snapshot_dev_filter_list());
-        let qemu_snap = qemu.create_fast_snapshot_filter(false, &dev_filter);
+        let qemu_snap = qemu.create_fast_snapshot_filter(true, &dev_filter);
         unsafe {
             FuzzerSnapshot {
                 // in_smi : *IN_SMI_HANDLE.get(),
@@ -42,6 +42,9 @@ impl FuzzerSnapshot {
             // in_smi : *IN_SMI_HANDLE.get(),
             qemu_snapshot : snap.qemu_snapshot,
         }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.qemu_snapshot.is_none()
     }
     
     pub fn restore_fuzz_snapshot(&self, qemu : Qemu) {

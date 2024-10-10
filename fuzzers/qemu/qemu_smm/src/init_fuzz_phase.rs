@@ -1,5 +1,6 @@
 use core::{ptr::addr_of_mut, time::Duration};
 use std::cell::UnsafeCell;
+use std::fmt::format;
 use std::{path::PathBuf, process};
 use libafl_bolts::math;
 use log::*;
@@ -10,6 +11,7 @@ use libafl_bolts::tuples::MatchNameRef;
 use libafl::feedbacks::stream::StreamFeedback;
 use libafl::inputs::multi::MultipartInput;
 use std::sync::{Arc, Mutex};
+use std::fs;
 use libafl_bolts::{
     current_nanos,
     ownedref::OwnedMutSlice,
@@ -43,13 +45,14 @@ use crate::common_hooks::*;
 use crate::config::*;
 use crate::exit_qemu::*;
 use crate::fuzzer_snapshot::*;
+use crate::qemu_control::*;
 
 static mut GLOB_INPUT : UnsafeCell<*mut StreamInputs> = UnsafeCell::new(std::ptr::null_mut() as *mut StreamInputs);
 
 static mut SMM_INIT_FUZZ_EXIT_SNAPSHOT : UnsafeCell<Option<FuzzerSnapshot>> = UnsafeCell::new(None);
 
 
-
+static mut SMM_INIT_FUZZ_INDEX : u64 = 1;
 
 fn gen_init_random_seed(corpus_dirs : &PathBuf) {
     let mut initial_input = MultipartInput::<BytesInput>::new();
@@ -61,21 +64,34 @@ fn gen_init_random_seed(corpus_dirs : &PathBuf) {
 }
 
 
-pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, ()), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>, snap : FuzzerSnapshot) -> SnapshotKind 
+pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, ()), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>, snap : SnapshotKind) -> SnapshotKind 
 {
+    let mut snapshot = FuzzerSnapshot::new_empty();
+    if let SnapshotKind::StartOfSmmInitSnap(sss) = snap {
+        snapshot = sss;
+        snapshot.restore_fuzz_snapshot(emulator.qemu());
+    }
+    else {
+        error!("init phase fuzz got non start of smm init snapshot");
+        exit_elegantly();
+    }
     unsafe {
         *SMM_INIT_FUZZ_EXIT_SNAPSHOT.get() = None;
-        *GLOB_INPUT.get() = std::ptr::null_mut() as *mut StreamInputs;
     }
 
-    let corpus_dirs = [PathBuf::from(INIT_PHASE_CORPUS_DIR)];
-    let objective_dir = PathBuf::from(INIT_PHASE_SOLUTION_DIR);
+    let corpus_dirs = [PathBuf::from(INIT_PHASE_CORPUS_DIR).join(PathBuf::from(format!("init_phase_corpus_{}/", unsafe {SMM_INIT_FUZZ_INDEX})))];
+    let objective_dir = PathBuf::from(INIT_PHASE_SOLUTION_DIR).join(PathBuf::from(format!("init_phase_crash_{}/", unsafe {SMM_INIT_FUZZ_INDEX})));
+    fs::create_dir_all(corpus_dirs[0].clone()).unwrap();
+    fs::create_dir_all(objective_dir.clone()).unwrap();
     gen_init_random_seed(&corpus_dirs[0]);
+    unsafe {
+        SMM_INIT_FUZZ_INDEX += 1;
+    }
+    
 
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         
-        set_exec_count(0);
-        info!("new run");
+        debug!("new run");
         let mut inputs = StreamInputs::from_multiinput(input);
         unsafe {  
             *GLOB_INPUT.get() = (&mut inputs) as *mut StreamInputs;
@@ -83,20 +99,15 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu = in_qemu.first_cpu().unwrap();
-        snap.restore_fuzz_snapshot(in_qemu);
-
-        let exit_reason;
+        let exit_reason = qemu_run_once(in_qemu, &snapshot);
         let exit_code;
-        unsafe {
-            exit_reason = in_qemu.run();
-        }
         if let Ok(qemu_exit_reason) = exit_reason
         {
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
                 let cmd : GuestReg = in_cpu.read_reg(Regs::Rax).unwrap();
                 let arg1 : GuestReg = in_cpu.read_reg(Regs::Rdi).unwrap();
                 let pc : GuestReg = in_cpu.read_reg(Regs::Rip).unwrap();
-                info!("qemu_run_to_end sync exit {:#x} {:#x} {:#x}",cmd,arg1,pc);
+                debug!("qemu_run_to_end sync exit {:#x} {:#x} {:#x}",cmd,arg1,pc);
                 if cmd == 4 {
                     match arg1 {
                         2 => {
@@ -181,7 +192,7 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
     ).unwrap();
 
     let mon = SimpleMonitor::new(|s| 
-        trace!("{s}")  ////////////////////
+        info!("{s}")  
     );
     let mut mgr = SimpleEventManager::new(mon);
     let scheduler = PowerQueueScheduler::new(&mut state, &mut edges_observer, PowerSchedule::FAST);
@@ -203,8 +214,8 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
         state
             .load_initial_inputs(&mut fuzzer, &mut executor, &mut mgr, &corpus_dirs)
             .unwrap_or_else(|_| {
-                info!("Failed to load initial corpus at {:?}", &corpus_dirs);
-                process::exit(0);
+                error!("Failed to load initial corpus at {:?}", &corpus_dirs);
+                exit_elegantly();
             });
             info!("We imported {} inputs from disk.", state.corpus().count());
     }
@@ -223,16 +234,12 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
             .unwrap();
     }
     let exit_snapshot = unsafe { (*SMM_INIT_FUZZ_EXIT_SNAPSHOT.get()).as_ref().unwrap() };
-    exit_snapshot.restore_fuzz_snapshot(emulator.qemu());
-    let exit_reason;
-    unsafe {
-        exit_reason = emulator.qemu().run();
-    }
+    let exit_reason = qemu_run_once(emulator.qemu(), exit_snapshot);
+
     if let Ok(ref qemu_exit_reason) = exit_reason {
         if let QemuExitReason::SyncExit = qemu_exit_reason {
             let cmd : GuestReg = emulator.qemu().first_cpu().unwrap().read_reg(Regs::Rax).unwrap();
             let arg1 : GuestReg = emulator.qemu().first_cpu().unwrap().read_reg(Regs::Rdi).unwrap();
-            info!("init phase fuzz return {:?} {:?} {:?}",exit_reason,cmd,arg1);
             if cmd == 4 {
                 if arg1 == 3 {
                     return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(emulator.qemu()));
@@ -245,7 +252,7 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
         }
         
     }
-    
+    error!("init phase does return correctly {:?}",exit_reason);
     exit_elegantly();
     SnapshotKind::None
 
