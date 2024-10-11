@@ -789,6 +789,8 @@ create_hook_types!(
         addr: GuestAddr,
         size: u64,
         out_addr: *mut GuestAddr,
+        rw : u32,
+        value: u128,
     ),
     Box<
         dyn for<'a> FnMut(
@@ -798,6 +800,8 @@ create_hook_types!(
             GuestAddr,
             u64,
             *mut GuestAddr,
+            u32,
+            u128,
         ),
     >,
     extern "C" fn(
@@ -806,9 +810,11 @@ create_hook_types!(
         GuestAddr,
         u64,
         *mut GuestAddr,
+        u32,
+        u128,
     )
 );
-create_exec_wrapper!(memrw, (pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr), 0, 1, PreMemrwHookId);
+create_exec_wrapper!(memrw, (pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr, rw : u32, value: u128), 0, 1, PreMemrwHookId);
 /// The thin wrapper around QEMU hooks.
 /// It is considered unsafe to use it directly.
 #[derive(Clone, Copy, Debug)]
@@ -1094,11 +1100,11 @@ impl QemuHooks {
     pub fn add_pre_memrw_hook<T: Into<HookData>>(
         &self,
         data: T,    
-        callback: Option<unsafe extern "C" fn(T, GuestAddr, GuestAddr, u64, *mut GuestAddr)>,
+        callback: Option<unsafe extern "C" fn(T, GuestAddr, GuestAddr, u64, *mut GuestAddr, u32, u128)>,
     ) -> PreMemrwHookId {
         unsafe {
             let data: u64 = data.into().0;
-            let callback: Option<unsafe extern "C" fn(u64, GuestAddr, GuestAddr, u64, *mut GuestAddr)> = transmute(callback);
+            let callback: Option<unsafe extern "C" fn(u64, GuestAddr, GuestAddr, u64, *mut GuestAddr, u32, u128)> = transmute(callback);
             let num = libafl_qemu_sys::libafl_add_pre_memrw_hook(callback, data);
             PreMemrwHookId(num)
         }

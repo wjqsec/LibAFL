@@ -1,5 +1,7 @@
 use std::vec::*;
 use std::string::*;
+
+const OVMF_MODE : &str = "RELEASE";
 pub fn gen_ovmf_qemu_args() -> Vec<String>
 {
     vec![
@@ -9,9 +11,9 @@ pub fn gen_ovmf_qemu_args() -> Vec<String>
         "-global".to_string(),
         "driver=cfi.pflash01,property=secure,value=on".to_string(),
         "-drive".to_string(),
-        "if=pflash,format=raw,unit=0,file=/home/w/hd/uefi_fuzz/fuzzer/edk2/Build/OvmfX64/RELEASE_GCC5/FV/OVMF_CODE.fd,readonly=on".to_string(),
+        format!("if=pflash,format=raw,unit=0,file=/home/w/hd/uefi_fuzz/fuzzer/edk2/Build/OvmfX64/{}_GCC5/FV/OVMF_CODE.fd,readonly=on",OVMF_MODE).to_string(),
         "-drive".to_string(),
-        "if=pflash,format=raw,unit=1,file=/home/w/hd/uefi_fuzz/fuzzer/edk2/Build/OvmfX64/RELEASE_GCC5/FV/OVMF_VARS.fd".to_string(),
+        format!("if=pflash,format=raw,unit=1,file=/home/w/hd/uefi_fuzz/fuzzer/edk2/Build/OvmfX64/{}_GCC5/FV/OVMF_VARS.fd",OVMF_MODE).to_string(),
         "-hda".to_string(),
         "/home/w/hd/uefi_fuzz/fuzzer/run/smmfuzz.img".to_string(),
         "-debugcon".to_string(),

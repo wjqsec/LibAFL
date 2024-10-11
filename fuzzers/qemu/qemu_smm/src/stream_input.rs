@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use libafl_qemu::QemuMemoryChunk;
 use crate::sparse_memory::*;
+use crate::common_hooks::*;
 use std::slice;
 use libafl::inputs::HasMutatorBytes;
 use libafl_bolts::HasLen;
@@ -91,18 +92,20 @@ impl StreamInputs {
         }
         Ok(())
     }
-    pub fn get_dram_fuzz_value(&mut self, addr : u64, len : u64) -> Result<Vec<u8>, StreamError> {
+    pub fn get_dram_fuzz_value(&mut self, addr : u64, len : u64) -> Result<u64, StreamError> {
         let id = DRAM_STREAM_MASK;
-        let mut ret = Vec::new();
+        let mut ret : u64 = 0;
         for i in 0..len {
             let read_addr = addr + i;
             match self.sparse_memory.read_byte(read_addr) {
-                Ok(value) => ret.push(value),
+                Ok(value) => {
+                    ret = (ret << 8) | (value as u64)
+                }
                 Err(dram_error) => {
                     match self.inputs.entry(id) {
                         std::collections::btree_map::Entry::Occupied(mut entry) => {
                             if let Ok(fuzz_input_ptr) = entry.get_mut().get_input_ptr(len as usize) {
-                                ret.push(unsafe {*fuzz_input_ptr});
+                                ret = (ret << 8) | (unsafe {*fuzz_input_ptr} as u64);
                             }
                             else {
                                 return Err(StreamError::StreamOutof(id));
@@ -117,9 +120,17 @@ impl StreamInputs {
         }
         Ok(ret)
     }
-    pub fn write_dram(&mut self, addr : u64, data : Vec<u8>) {
-        self.sparse_memory.write(addr, data);
+    pub fn set_dram_value(&mut self, addr : u64, len : u64, value : u64) {
+        self.sparse_memory.write(addr, len, &value.to_le_bytes());
     }
+
+    pub fn set_dram_dummy_value(&mut self, value : u64) {
+        self.sparse_memory.write_qemu_dummy(value);
+    }
+
+
+    
+
     pub fn write_comm_buf(&mut self, qemu : Qemu, comm_id : u64, addr : u64, max_size : u64)-> Result<usize, StreamError> {
         let id = (comm_id as u128) | COMMBUF_STREAM_MASK;
         match self.inputs.entry(id) {

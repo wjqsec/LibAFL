@@ -7,7 +7,8 @@ use libafl_qemu::Regs;
 use libafl_qemu::GuestReg;
 
 pub struct FuzzerSnapshot {
-    // in_smi : bool,
+    in_smm_init : bool,
+    in_smi : bool,
     qemu_snapshot : Option<FastSnapshotPtr>,
 }
 
@@ -26,21 +27,17 @@ impl FuzzerSnapshot {
         let qemu_snap = qemu.create_fast_snapshot_filter(true, &dev_filter);
         unsafe {
             FuzzerSnapshot {
-                // in_smi : *IN_SMI_HANDLE.get(),
+                in_smm_init : unsafe { IN_SMM_INIT },
+                in_smi : unsafe { IN_SMI_HANDLE },
                 qemu_snapshot : Some(qemu_snap),
             }
         }
     }
     pub fn new_empty() -> Self {
         FuzzerSnapshot {
-            // in_smi : *IN_SMI_HANDLE.get(),
+            in_smm_init : false,
+            in_smi : false,
             qemu_snapshot : None,
-        }
-    }
-    pub fn from_snap(snap : &FuzzerSnapshot) -> Self {
-        FuzzerSnapshot {
-            // in_smi : *IN_SMI_HANDLE.get(),
-            qemu_snapshot : snap.qemu_snapshot,
         }
     }
     pub fn is_empty(&self) -> bool {
@@ -49,7 +46,8 @@ impl FuzzerSnapshot {
     
     pub fn restore_fuzz_snapshot(&self, qemu : Qemu) {
         unsafe {
-            // *IN_SMI_HANDLE.get() = self.in_smi;
+            IN_SMM_INIT = self.in_smm_init;
+            IN_SMI_HANDLE = self.in_smi;
             qemu.restore_fast_snapshot(self.qemu_snapshot.unwrap());
         }
     }

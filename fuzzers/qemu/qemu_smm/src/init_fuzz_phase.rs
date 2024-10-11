@@ -47,11 +47,8 @@ use crate::exit_qemu::*;
 use crate::fuzzer_snapshot::*;
 use crate::qemu_control::*;
 
-static mut GLOB_INPUT : UnsafeCell<*mut StreamInputs> = UnsafeCell::new(std::ptr::null_mut() as *mut StreamInputs);
 
-static mut SMM_INIT_FUZZ_EXIT_SNAPSHOT : UnsafeCell<Option<FuzzerSnapshot>> = UnsafeCell::new(None);
-
-
+static mut SMM_INIT_FUZZ_EXIT_SNAPSHOT : Option<FuzzerSnapshot> = None;
 static mut SMM_INIT_FUZZ_INDEX : u64 = 1;
 
 fn gen_init_random_seed(corpus_dirs : &PathBuf) {
@@ -76,7 +73,7 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
         exit_elegantly();
     }
     unsafe {
-        *SMM_INIT_FUZZ_EXIT_SNAPSHOT.get() = None;
+        SMM_INIT_FUZZ_EXIT_SNAPSHOT = None;
     }
 
     let corpus_dirs = [PathBuf::from(INIT_PHASE_CORPUS_DIR).join(PathBuf::from(format!("init_phase_corpus_{}/", unsafe {SMM_INIT_FUZZ_INDEX})))];
@@ -94,13 +91,14 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
         debug!("new run");
         let mut inputs = StreamInputs::from_multiinput(input);
         unsafe {  
-            *GLOB_INPUT.get() = (&mut inputs) as *mut StreamInputs;
+            GLOB_INPUT = (&mut inputs) as *mut StreamInputs;
         }
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu = in_qemu.first_cpu().unwrap();
         let exit_reason = qemu_run_once(in_qemu, &snapshot);
         let exit_code;
+        info!("new run exit {:?}",exit_reason);
         if let Ok(qemu_exit_reason) = exit_reason
         {
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
@@ -115,8 +113,8 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
                         },
                         4 => {
                             unsafe {
-                                if (*SMM_INIT_FUZZ_EXIT_SNAPSHOT.get()).is_none() {
-                                    *SMM_INIT_FUZZ_EXIT_SNAPSHOT.get() = Some(FuzzerSnapshot::from_qemu(in_qemu));
+                                if SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_none() {
+                                    SMM_INIT_FUZZ_EXIT_SNAPSHOT = Some(FuzzerSnapshot::from_qemu(in_qemu));
                                 }
                             }
                             exit_code = ExitKind::Ok;
@@ -192,7 +190,7 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
     ).unwrap();
 
     let mon = SimpleMonitor::new(|s| 
-        info!("{s}")  
+        debug!("{s}")  
     );
     let mut mgr = SimpleEventManager::new(mon);
     let scheduler = PowerQueueScheduler::new(&mut state, &mut edges_observer, PowerSchedule::FAST);
@@ -225,7 +223,7 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
     
     loop {
         unsafe {
-            if (*SMM_INIT_FUZZ_EXIT_SNAPSHOT.get()).is_some() {
+            if SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_some() {
                 break;
             }
         }
@@ -233,8 +231,8 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
             .fuzz_one(&mut stages, &mut executor, &mut state, &mut mgr)
             .unwrap();
     }
-    let exit_snapshot = unsafe { (*SMM_INIT_FUZZ_EXIT_SNAPSHOT.get()).as_ref().unwrap() };
-    let exit_reason = qemu_run_once(emulator.qemu(), exit_snapshot);
+    let exit_snapshot = unsafe { SMM_INIT_FUZZ_EXIT_SNAPSHOT.as_ref().unwrap() };
+    let exit_reason = qemu_run_once(emulator.qemu(), &exit_snapshot);
 
     if let Ok(ref qemu_exit_reason) = exit_reason {
         if let QemuExitReason::SyncExit = qemu_exit_reason {

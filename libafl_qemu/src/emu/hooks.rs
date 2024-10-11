@@ -864,7 +864,7 @@ where
             let exec = get_raw_hook!(
                 hook,
                 memrw_0_exec_hook_wrapper::<ET, S>,
-                unsafe extern "C" fn(&mut HookState<1, PreMemrwHookId>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr)
+                unsafe extern "C" fn(&mut HookState<1, PreMemrwHookId>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr, rw : u32, value : u128)
             );
             self.memrw_hooks.push(Box::pin(HookState::new(
                 PreMemrwHookId::invalid(),

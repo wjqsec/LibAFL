@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
+
+use crate::DUMMY_MEMORY_HOST_PTR;
 pub struct SparseMemory {
     memory : BTreeMap<u64,u8>,
 }
@@ -42,11 +44,16 @@ impl SparseMemory {
         ).or_insert(value);
     }
 
-    pub fn write(&mut self, addr : u64, data : Vec<u8>) {
-        for i in 0..data.len() {
+    pub fn write(&mut self, addr : u64, len : u64, data : &[u8]) {
+        for i in 0..len {
             let access_addr = addr + i as u64;
-            let insert_value = data[i];
+            let insert_value = data[i as usize].try_into().unwrap();
             self.write_byte(access_addr, insert_value);
+        }
+    }
+    pub fn write_qemu_dummy(&mut self, data : u64) {
+        unsafe {
+            *DUMMY_MEMORY_HOST_PTR = data;
         }
     }
     pub fn reset(&mut self) {

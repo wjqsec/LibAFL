@@ -8,7 +8,7 @@ use std::{
 
 use bytes_utils::SegmentedBuf;
 use libafl_qemu_sys::{
-    libafl_load_qemu_snapshot, libafl_page_from_addr, libafl_qemu_current_paging_id,
+    libafl_load_qemu_snapshot, libafl_page_from_addr, libafl_qemu_current_paging_id,libafl_page_offset_from_addr,
     libafl_save_qemu_snapshot, qemu_cleanup, qemu_main_loop, vm_start, GuestAddr, GuestPhysAddr,
     GuestUsize, GuestVirtAddr,
 };
@@ -99,6 +99,25 @@ impl CPU {
                 None
             } else {
                 Some(paddr)
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn get_phys_addr_with_offset(&self, vaddr: GuestVirtAddr) -> Option<GuestPhysAddr> {
+        unsafe {
+            let offset = libafl_page_offset_from_addr(vaddr as GuestUsize) as GuestVirtAddr;
+            let page = libafl_page_from_addr(vaddr as GuestUsize) as GuestVirtAddr;
+            let mut attrs = MaybeUninit::<libafl_qemu_sys::MemTxAttrs>::uninit();
+            let paddr = libafl_qemu_sys::cpu_get_phys_page_attrs_debug(
+                self.ptr,
+                page as GuestVirtAddr,
+                attrs.as_mut_ptr(),
+            );
+            if paddr == (-1i64 as GuestPhysAddr) {
+                None
+            } else {
+                Some(paddr + offset)
             }
         }
     }

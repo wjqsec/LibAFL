@@ -9,24 +9,31 @@ use std::sync::{Arc, Mutex};
 use std::vec::*;
 use crate::config::*;
 
-pub static mut DUMMY_MEMORY_ADDR : UnsafeCell<u64> = UnsafeCell::new(0);
 
-pub static mut IN_SMM_INIT : UnsafeCell<bool> = UnsafeCell::new(false);
-pub static mut IN_SMI_HANDLE : UnsafeCell<bool> = UnsafeCell::new(false);
+pub static mut DUMMY_MEMORY_VIRT_ADDR : u64 = 0;
+pub static mut DUMMY_MEMORY_HOST_PTR : *mut u64 = 0 as *mut u64;
 
-pub static mut NUM_STREAMS : UnsafeCell<u64> = UnsafeCell::new(0);
+pub static mut IN_SMM_INIT : bool = false;
+pub static mut IN_SMI_HANDLE : bool = false;
 
-
+pub static mut NUM_STREAMS : u64 = 0;
 pub static NEW_STREAM : Lazy<Arc<Mutex<Vec<u128>>>> = Lazy::new( || Arc::new(Mutex::new(Vec::new())));
-static mut EXEC_COUNT : UnsafeCell<u64> = UnsafeCell::new(0);
+
+static mut EXEC_COUNT : u64 = 0;
+
+
+pub static mut GLOB_INPUT : *mut StreamInputs = std::ptr::null_mut() as *mut StreamInputs;
+
 
 pub fn get_exec_count() -> u64 {
-    let exec_count;
-    unsafe { exec_count =  *EXEC_COUNT.get(); }
-    exec_count
+    unsafe {
+        EXEC_COUNT
+    }
 }
 pub fn set_exec_count(val :u64) {
-    unsafe { *EXEC_COUNT.get() =  val; }
+    unsafe {
+        EXEC_COUNT = val;
+    }
 }
 
 fn post_io_read_common(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32, 
@@ -35,26 +42,26 @@ fn post_io_read_common(base : GuestAddr, offset : GuestAddr,size : usize, data :
     if handled != 1 {
         return;
     }
-
+    
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
     let addr = base + offset;
     
-    // match fuzz_input.get_io_fuzz_value(pc, addr, size as u64, data) {
-    //     Ok(_) => {},
-    //     Err(io_err) => {
-    //         match io_err {
-    //             StreamError::StreamNotFound(id) => {
-    //                 debug!("{id:#x} stream not found {handled}");
-    //                 NEW_STREAM.lock().unwrap().push(id);
-    //                 qemu.first_cpu().unwrap().exit_stream_notfound();
-    //             },
-    //             StreamError::StreamOutof(id) => {
-    //                 debug!("{id:#x} stream used up");
-    //                 qemu.first_cpu().unwrap().exit_stream_outof();
-    //             },
-    //         }
-    //     }
-    // }
+    match fuzz_input.get_io_fuzz_value(pc, addr, size as u64, data) {
+        Ok(_) => {},
+        Err(io_err) => {
+            match io_err {
+                StreamError::StreamNotFound(id) => {
+                    debug!("io {id:#x} stream not found");
+                    NEW_STREAM.lock().unwrap().push(id);
+                    cpu.exit_stream_notfound();
+                },
+                StreamError::StreamOutof(id) => {
+                    debug!("io {id:#x} stream used up");
+                    cpu.exit_stream_outof();
+                },
+            }
+        }
+    }
 
 
     let value = match size {
@@ -69,7 +76,7 @@ fn post_io_read_common(base : GuestAddr, offset : GuestAddr,size : usize, data :
         },
         
     };
-    
+
     debug!("post_io_read {pc:#x} {addr:#x} {size:#x} {value:#x} {handled:#x}");
 
 }
@@ -78,7 +85,7 @@ pub fn post_io_read_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : 
     fuzz_input : &mut StreamInputs, cpu : CPU)
 {
     unsafe {
-        if *IN_SMM_INIT.get() == false {
+        if IN_SMM_INIT == false {
             return;
         }
     }
@@ -88,7 +95,7 @@ pub fn post_io_read_smm_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : u
     fuzz_input : &mut StreamInputs, cpu : CPU)
 {
     unsafe {
-        if *IN_SMI_HANDLE.get() == false {
+        if IN_SMI_HANDLE == false {
             return;
         }
     }
@@ -111,13 +118,13 @@ fn pre_io_write_common(base : GuestAddr, offset : GuestAddr,size : usize, data :
         },
     };
     let addr = base + offset;
-    trace!("pre_io_write {pc:#x} {addr:#x} {size:#x} {value:#x}");
+    debug!("pre_io_write {pc:#x} {addr:#x} {size:#x} {value:#x}");
 }
 
 pub fn pre_io_write_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool, cpu : CPU)
 {
     unsafe {
-        if *IN_SMM_INIT.get() == false {
+        if IN_SMM_INIT == false {
             return;
         }
     }
@@ -126,34 +133,74 @@ pub fn pre_io_write_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : 
 pub fn pre_io_write_smm_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool, cpu : CPU)
 {
     unsafe {
-        if *IN_SMI_HANDLE.get() == false {
+        if IN_SMI_HANDLE == false {
             return;
         }
     }
     pre_io_write_common(base, offset, size, data, handled, cpu);
 }
 
-fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr)
+fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
 {
-    // debug!("memread {:#x} {:#x}",pc,addr);
+    // if addr >= 0x6000000 && addr <= 0x8000000 {
+    //     return;
+    // }
+    if size > 16 {
+        error!("pre_memrw_common get size large than 8 it is {:?}", size);
+        exit_elegantly();
+    }
+
+    if rw == 0 { // read
+        // match fuzz_input.get_dram_fuzz_value(addr, size) {
+        //     Ok(value) => {
+        //         fuzz_input.set_dram_dummy_value(value);
+        //     }
+        //     Err(stream_error) => {
+        //         match stream_error {
+        //             StreamError::StreamNotFound(id) => {
+        //                 debug!("dram {id:#x} stream not found");
+        //                 NEW_STREAM.lock().unwrap().push(id);
+        //                 cpu.exit_stream_notfound();
+        //             },
+        //             StreamError::StreamOutof(id) => {
+        //                 debug!("dram {id:#x} stream used up");
+        //                 cpu.exit_stream_outof();
+        //             },
+        //         }
+        //     }
+        // }
+    }
+    else if rw == 1 {   // write
+        // fuzz_input.set_dram_value(addr, size, val);
+    }
+    else if rw == 2 {    // exch
+
+    }
+    else if rw == 3 {    // vec ldr
+
+    }
+    else if rw == 4 {    // vec str
+
+    }
+    debug!("memread {:#x} {:#x} {:#x}",pc,addr,size);
 }
-pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr)
+pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
 {
     unsafe {
-        if *IN_SMM_INIT.get() == false {
+        if IN_SMM_INIT == false {
             return;
         }
     }
-    pre_memrw_common(pc, addr, size, out_addr);
+    pre_memrw_common(pc, addr, size, out_addr, rw, val, fuzz_input, cpu);
 }
-pub fn pre_memrw_smm_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr)
+pub fn pre_memrw_smm_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
 {
     unsafe {
-        if *IN_SMI_HANDLE.get() == false {
+        if IN_SMI_HANDLE == false {
             return;
         }
     }
-    pre_memrw_common(pc, addr, size, out_addr);
+    pre_memrw_common(pc, addr, size, out_addr, rw, val, fuzz_input, cpu);
 }
 pub fn backdoor_common(cpu : CPU)
 {
@@ -166,7 +213,7 @@ pub fn backdoor_common(cpu : CPU)
     match cmd {
         9 => {
             unsafe {
-                *NUM_STREAMS.get() =  arg1; 
+                NUM_STREAMS =  arg1; 
             }
         }
         10 => {
@@ -188,27 +235,32 @@ pub fn backdoor_common(cpu : CPU)
         },
         11 => {
             unsafe {
-                *DUMMY_MEMORY_ADDR.get() = arg1;
+                let dummy_virt_addr = arg1;
+                DUMMY_MEMORY_VIRT_ADDR = dummy_virt_addr;
+                let dummy_phy_addr = cpu.get_phys_addr_with_offset(dummy_virt_addr).unwrap();
+                let dummy_host_addr = cpu.get_host_addr(dummy_phy_addr);
+                DUMMY_MEMORY_HOST_PTR = dummy_host_addr as *mut u64;
+                info!("dummy memory info {:#x} {:#x} {:?}",dummy_virt_addr,dummy_phy_addr,dummy_host_addr);
             }
         },
         12 => {
             unsafe {
-                *IN_SMM_INIT.get() = true;
+                IN_SMM_INIT = true;
             }
         }
         13 => {
             unsafe {
-                *IN_SMM_INIT.get() = false;
+                IN_SMM_INIT = false;
             }
         },
         14 => {
             unsafe {
-                *IN_SMI_HANDLE.get() = true;
+                IN_SMI_HANDLE = true;
             }
         },
         15 => {
             unsafe {
-                *IN_SMI_HANDLE.get() = false;
+                IN_SMI_HANDLE = false;
             }
         },
         _ => { 

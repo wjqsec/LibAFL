@@ -17914,6 +17914,8 @@ extern "C" {
                 addr: target_ulong,
                 size: u64,
                 out_addr: *mut target_ulong,
+                rw: u32,
+                value: Int128Alias___uint128_t,
             ),
         >,
         data: u64,
@@ -17927,6 +17929,9 @@ extern "C" {
 }
 extern "C" {
     pub fn libafl_qemu_in_smm_mode() -> bool;
+}
+extern "C" {
+    pub fn libafl_page_offset_from_addr(addr: target_ulong) -> target_ulong;
 }
 extern "C" {
     pub fn libafl_jit_trace_edge_hitcount(data: u64, id: u64) -> usize;
@@ -17947,6 +17952,7 @@ extern "C" {
     pub fn libafl_paddr2host(cpu: *mut CPUState, addr: hwaddr, is_write: bool) -> *mut u8;
 }
 pub type __int128_t = i128;
+pub type Int128Alias___uint128_t = u128;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
 pub struct kvm_dirty_gfn {
