@@ -75,12 +75,13 @@ impl StreamInputs {
             sparse_memory : SparseMemory::new(),
         }
     }
-    pub fn get_io_fuzz_value(&mut self, pc : u64, addr : u64, len : u64, data : *mut u8) -> Result<(), StreamError> {
+    pub fn get_io_fuzz_value(&mut self, pc : u64, addr : u64, len : u64) -> Result<(*const u8), StreamError> {
         let id = ((pc as u128) << 64) | (addr as u128) | IO_STREAM_MASK;
+        // let id =(addr as u128) | IO_STREAM_MASK;
         match self.inputs.entry(id) {
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 if let Ok(fuzz_input_ptr) = entry.get_mut().get_input_ptr(len as usize) {
-                    unsafe {data.copy_from(fuzz_input_ptr, len as usize);}
+                    return Ok(fuzz_input_ptr);
                 }
                 else {
                     return Err(StreamError::StreamOutof(id));
@@ -90,7 +91,6 @@ impl StreamInputs {
                 return Err(StreamError::StreamNotFound(id));
             },
         }
-        Ok(())
     }
     pub fn get_dram_fuzz_value(&mut self, addr : u64, len : u64) -> Result<u64, StreamError> {
         let id = DRAM_STREAM_MASK;

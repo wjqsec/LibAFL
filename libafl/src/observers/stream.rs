@@ -29,6 +29,9 @@ impl StreamObserver {
     pub fn get_newstream(&self) -> Vec<u128> {
         self.new_stream.lock().unwrap().clone()
     }
+    pub fn has_newstream(&self) -> bool {
+        !self.new_stream.lock().unwrap().is_empty()
+    }
 }
 
 impl<S> Observer<S> for StreamObserver

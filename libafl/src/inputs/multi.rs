@@ -158,7 +158,7 @@ where
             .iter()
             .cloned()
             .zip(self.parts.iter().map(|i| i.generate_name(id)))
-            .map(|(id, generated)| format!("{id}-{generated}"))
+            .map(|(id, generated)| format!("{id:#x}-{generated}"))
             .collect::<Vec<_>>()
             .join(",")
     }

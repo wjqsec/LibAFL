@@ -38,7 +38,7 @@ use libafl_qemu::{
     }, Emulator, NopEmulatorExitHandler, PostDeviceregReadHookId, PreDeviceregWriteHookId, Qemu, QemuExitReason, Regs
 };
 use libafl_qemu_sys::GuestAddr;
-use libafl_qemu::Hook;
+use libafl_qemu::{Hook, HookId};
 use libafl_qemu::modules::edges::gen_hashed_block_ids;
 use libafl_qemu::GuestReg;
 use libafl_qemu::qemu::BlockHookId;
@@ -52,7 +52,8 @@ use crate::common_hooks::*;
 use crate::config::*;
 use crate::exit_qemu::*;
 use crate::fuzzer_snapshot::*;
-use init_fuzz_phase::*;
+use crate::smm_fuzz_phase::smm_phase_fuzz;
+use init_fuzz_phase::init_phase_fuzz;
 use std::io::{self, Write};
 use std::thread;
 
@@ -75,38 +76,49 @@ fn main() {
         NopEmulatorExitHandler,
         NopCommandManager)
         .unwrap();
-
+    let cpu = qemu.first_cpu().unwrap();
     
     let backdoor_id = emulator.modules_mut().backdoor(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, addr : GuestAddr| {
         backdoor_common(modules.qemu().first_cpu().unwrap());
     })));
 
+    let mut snapshot = SnapshotKind::None;
     unsafe {
-        let first_exit = qemu_run_once(qemu, &FuzzerSnapshot::new_empty());
-        let cmd : GuestReg = qemu.first_cpu().unwrap().read_reg(Regs::Rax).unwrap();
-        let arg1 : GuestReg = qemu.first_cpu().unwrap().read_reg(Regs::Rdi).unwrap();
-        let pc : GuestReg = qemu.first_cpu().unwrap().read_reg(Regs::Rip).unwrap();
-        info!("first exit <{:?}> {cmd} {arg1} {:#x}",first_exit,pc);
+        let exit_reason = qemu_run_once(qemu, &FuzzerSnapshot::new_empty());
+        if let Ok(qemu_exit_reason) = exit_reason {
+            if let QemuExitReason::SyncExit = qemu_exit_reason  {
+                let cmd : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
+                let arg1 : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
+                if cmd == 4 {  // sync exit
+                    if arg1 == 3 {
+                        snapshot = SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
+                    } else if arg1 == 5 {
+                        snapshot = SnapshotKind::StartOfSmmFuzzSnap(FuzzerSnapshot::from_qemu(qemu));
+                    }   
+                }
+            }
+        }
     }
+    info!("first breakpoint");
 
 
     
-    let block_id = emulator.modules_mut().blocks(Hook::Function(gen_hashed_block_ids::<_, _>), Hook::Empty, 
+    let mut block_id = emulator.modules_mut().blocks(Hook::Function(gen_hashed_block_ids::<_, _>), Hook::Empty, 
     Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
         bbl_common(modules.qemu().first_cpu().unwrap()); 
     })));
-    let devread_id : PostDeviceregReadHookId = emulator.modules_mut().devread(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32| {
+    let mut devread_id : PostDeviceregReadHookId = emulator.modules_mut().devread(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32| {
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
         post_io_read_init_fuzz_phase(base , offset ,size , data , handled,fuzz_input ,modules.qemu().first_cpu().unwrap());
     })));
-    let devwrite_id : PreDeviceregWriteHookId = emulator.modules_mut().devwrite(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool| {
+    let mut devwrite_id : PreDeviceregWriteHookId = emulator.modules_mut().devwrite(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool| {
         pre_io_write_init_fuzz_phase(base, offset,size , data , handled, modules.qemu().first_cpu().unwrap());
     })));
-    let memrw_id = emulator.modules_mut().memrw(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr, rw : u32 , value : u128| {
-        let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
-        pre_memrw_init_fuzz_phase(pc, addr, size, out_addr,rw, value, fuzz_input, modules.qemu().first_cpu().unwrap());
-    })));
-    // fuzz module init function one by one
+    // let mut memrw_id = emulator.modules_mut().memrw(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr, rw : u32 , value : u128| {
+    //     let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
+    //     pre_memrw_init_fuzz_phase(pc, addr, size, out_addr,rw, value, fuzz_input, modules.qemu().first_cpu().unwrap());
+    // })));
+    
 
     // for test
     // unsafe {
@@ -117,9 +129,9 @@ fn main() {
     // }
     // exit_elegantly();
 
-    let mut snapshot = SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
+    
     loop {
-        snapshot = init_phase_fuzz::<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, ()), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>(&mut emulator ,snapshot);
+        // fuzz module init function one by one
         match snapshot {
             SnapshotKind::None => { 
                 error!("got None"); 
@@ -140,9 +152,34 @@ fn main() {
                 break; 
             },
         };
+        snapshot = init_phase_fuzz::<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, ()), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>(&mut emulator ,snapshot);
     }
     info!("finish init phase fuzzing!");
-    exit_elegantly();
+    exit_elegantly(); 
+
+    // block_id.remove(true);
+    // devread_id.remove(true);
+    // devwrite_id.remove(true);
+    // memrw_id.remove(true);
+
+    // let mut block_id = emulator.modules_mut().blocks(Hook::Function(gen_hashed_block_ids::<_, _>), Hook::Empty, 
+    // Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
+    //     bbl_common(modules.qemu().first_cpu().unwrap()); 
+    // })));
+    // let mut devread_id : PostDeviceregReadHookId = emulator.modules_mut().devread(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32| {
+    //     let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
+    //     post_io_read_smm_fuzz_phase(base , offset ,size , data , handled,fuzz_input ,modules.qemu().first_cpu().unwrap());
+    // })));
+    // let mut devwrite_id : PreDeviceregWriteHookId = emulator.modules_mut().devwrite(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool| {
+    //     pre_io_write_smm_fuzz_phase(base, offset,size , data , handled, modules.qemu().first_cpu().unwrap());
+    // })));
+    // let mut memrw_id = emulator.modules_mut().memrw(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr, rw : u32 , value : u128| {
+    //     let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
+    //     pre_memrw_smm_fuzz_phase(pc, addr, size, out_addr,rw, value, fuzz_input, modules.qemu().first_cpu().unwrap());
+    // })));
+    exit_elegantly(); 
+    smm_phase_fuzz::<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, ()), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>(&mut emulator ,snapshot);
+    
     
    
     // let cpuid_id = emulator.modules_mut().cpuid(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_eax: u32, out_eax: *mut u32,out_ebx: *mut u32, out_ecx: *mut u32, out_edx: *mut u32| {

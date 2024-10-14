@@ -2,13 +2,12 @@ use libafl_qemu::{GuestAddr, GuestReg, CPU,Regs,Qemu};
 
 use log::*;
 
-use crate::{exit_elegantly, stream_input::*};
+use crate::{exit_elegantly, stream_input::*,SmmQemuExit};
 use std::cell::UnsafeCell;
 use once_cell::sync::Lazy;
 use std::sync::{Arc, Mutex};
 use std::vec::*;
 use crate::config::*;
-
 
 pub static mut DUMMY_MEMORY_VIRT_ADDR : u64 = 0;
 pub static mut DUMMY_MEMORY_HOST_PTR : *mut u64 = 0 as *mut u64;
@@ -21,6 +20,7 @@ pub static NEW_STREAM : Lazy<Arc<Mutex<Vec<u128>>>> = Lazy::new( || Arc::new(Mut
 
 static mut EXEC_COUNT : u64 = 0;
 
+static mut NEXT_EXIT : Option<SmmQemuExit> = None;  // use this variblae to prevent memory leak
 
 pub static mut GLOB_INPUT : *mut StreamInputs = std::ptr::null_mut() as *mut StreamInputs;
 
@@ -46,18 +46,26 @@ fn post_io_read_common(base : GuestAddr, offset : GuestAddr,size : usize, data :
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
     let addr = base + offset;
     
-    match fuzz_input.get_io_fuzz_value(pc, addr, size as u64, data) {
-        Ok(_) => {},
-        Err(io_err) => {
+    match fuzz_input.get_io_fuzz_value(pc, addr, size as u64) {
+        Ok(fuzz_input_ptr) => { 
+            unsafe {data.copy_from(fuzz_input_ptr, size as usize);}
+        },
+        Err(io_err) => {    
             match io_err {
                 StreamError::StreamNotFound(id) => {
                     debug!("io {id:#x} stream not found");
                     NEW_STREAM.lock().unwrap().push(id);
-                    cpu.exit_stream_notfound();
+                    unsafe {
+                        NEXT_EXIT = Some(SmmQemuExit::StreamNotFound);
+                    }
+                    // cpu.exit_stream_notfound();
                 },
                 StreamError::StreamOutof(id) => {
                     debug!("io {id:#x} stream used up");
-                    cpu.exit_stream_outof();
+                    unsafe {
+                        NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+                    }
+                    // cpu.exit_stream_outof();
                 },
             }
         }
@@ -142,9 +150,9 @@ pub fn pre_io_write_smm_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : u
 
 fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
 {
-    // if addr >= 0x6000000 && addr <= 0x8000000 {
-    //     return;
-    // }
+    if addr >= 0x7000000 && addr <= 0x8000000 {
+        return;
+    }
     if size > 16 {
         error!("pre_memrw_common get size large than 8 it is {:?}", size);
         exit_elegantly();
@@ -172,6 +180,7 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
     }
     else if rw == 1 {   // write
         // fuzz_input.set_dram_value(addr, size, val);
+
     }
     else if rw == 2 {    // exch
 
@@ -182,7 +191,7 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
     else if rw == 4 {    // vec str
 
     }
-    debug!("memread {:#x} {:#x} {:#x}",pc,addr,size);
+    debug!("memread {:#x} {:#x} {:#x} {:#x}",pc,addr,size,rw);
 }
 pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
 {
@@ -276,6 +285,22 @@ pub fn bbl_common(cpu : CPU) {
     let rdi : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
     
     trace!("bbl-> {} {pc:#x} {eax:#x} {rdi:#x}",get_exec_count());
+    unsafe {
+        match NEXT_EXIT {
+            Some(SmmQemuExit::StreamNotFound) => {
+                NEXT_EXIT = None;
+                cpu.exit_stream_notfound();
+            },
+            Some(SmmQemuExit::StreamOutof) => {
+                NEXT_EXIT = None;
+                cpu.exit_stream_outof();
+            }
+            _ => {
+
+            }
+        }
+    }
+
     if get_exec_count() > INIT_PHASE_NUM_TIMEOUT_BBL {
         cpu.exit_timeout();
     }

@@ -1,5 +1,13 @@
 use std::process::{Command, exit};
 use log::*;
+
+pub enum SmmQemuExit {
+    Timeout,
+    StreamNotFound,
+    StreamOutof,
+    Crash,  
+}
+
 pub fn exit_elegantly()
 {
     let status = Command::new("stty")

@@ -29,7 +29,7 @@ where
         _state: &mut S,
         _manager: &mut EM,
         _input: &S::Input,
-        _observers: &OT,
+        observers: &OT,
         _exit_kind: &ExitKind,
     ) -> Result<bool, Error>
     where
@@ -37,7 +37,12 @@ where
         OT: ObserversTuple<S>,
     {
         // TODO Replace with match_name_type when stable
-        Ok(false)
+        let observer = observers.get(&self.observer_handle).unwrap();
+        if observer.has_newstream() {
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     /// Append to the testcase the generated metadata in case of a new corpus item
