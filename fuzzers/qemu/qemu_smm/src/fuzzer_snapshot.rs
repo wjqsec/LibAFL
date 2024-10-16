@@ -43,7 +43,11 @@ impl FuzzerSnapshot {
     pub fn is_empty(&self) -> bool {
         self.qemu_snapshot.is_none()
     }
-    
+    pub fn delete(&self, qemu : Qemu) {
+        if let Some(snap) = self.qemu_snapshot {
+            qemu.delete_fast_snapshot(snap);
+        }
+    }
     pub fn restore_fuzz_snapshot(&self, qemu : Qemu) {
         unsafe {
             IN_SMM_INIT = self.in_smm_init;
@@ -52,4 +56,3 @@ impl FuzzerSnapshot {
         }
     }
 }
-

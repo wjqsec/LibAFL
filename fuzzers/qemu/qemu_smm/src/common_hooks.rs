@@ -22,6 +22,9 @@ static mut EXEC_COUNT : u64 = 0;
 
 static mut NEXT_EXIT : Option<SmmQemuExit> = None;  // use this variblae to prevent memory leak
 
+static mut INIT_PHASE_NUM_TIMEOUT_BBL : u64 = 0xffffffffff;
+
+
 pub static mut GLOB_INPUT : *mut StreamInputs = std::ptr::null_mut() as *mut StreamInputs;
 
 
@@ -279,6 +282,11 @@ pub fn backdoor_common(cpu : CPU)
     };
 }
 
+pub fn set_num_timeout_bbl(bbl : u64) {
+    unsafe {
+        INIT_PHASE_NUM_TIMEOUT_BBL = bbl;
+    }
+}
 pub fn bbl_common(cpu : CPU) {
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
     let eax : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
@@ -301,7 +309,7 @@ pub fn bbl_common(cpu : CPU) {
         }
     }
 
-    if get_exec_count() > INIT_PHASE_NUM_TIMEOUT_BBL {
+    if get_exec_count() > unsafe { INIT_PHASE_NUM_TIMEOUT_BBL } {
         cpu.exit_timeout();
     }
     set_exec_count(get_exec_count() + 1);

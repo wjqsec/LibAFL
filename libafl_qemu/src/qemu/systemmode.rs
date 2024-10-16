@@ -263,6 +263,15 @@ impl Qemu {
         }
     }
 
+    #[must_use]
+    pub fn delete_fast_snapshot(&self, snap : FastSnapshotPtr) {
+        unsafe {
+            libafl_qemu_sys::syx_snapshot_free(
+                snap
+            )
+        }
+    }
+
     pub unsafe fn restore_fast_snapshot(&self, snapshot: FastSnapshotPtr) {
         libafl_qemu_sys::syx_snapshot_root_restore(snapshot)
     }

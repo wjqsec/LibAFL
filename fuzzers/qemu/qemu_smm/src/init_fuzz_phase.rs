@@ -4,6 +4,7 @@ use std::fmt::format;
 use std::{path::PathBuf, process};
 use libafl_bolts::math;
 use log::*;
+use std::ptr;
 use libafl::{
     corpus::Corpus, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, CachedOnDiskCorpus, PowerQueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
 };
@@ -48,12 +49,12 @@ use crate::fuzzer_snapshot::*;
 use crate::qemu_control::*;
 
 
-static mut SMM_INIT_FUZZ_EXIT_SNAPSHOT : Option<FuzzerSnapshot> = None;
+static mut SMM_INIT_FUZZ_EXIT_SNAPSHOT : *mut FuzzerSnapshot = ptr::null_mut();
 static mut SMM_INIT_FUZZ_INDEX : u64 = 1;
 
 fn gen_init_random_seed(corpus_dirs : &PathBuf) {
     let mut initial_input = MultipartInput::<BytesInput>::new();
-    // initial_input.add_part(0 as u128, BytesInput::new(DEFAULT_STREAM_DATA.to_vec()));
+    initial_input.add_part(0 as u128, BytesInput::new(DEFAULT_STREAM_DATA.to_vec()));
     let mut init_seed_path = PathBuf::new(); 
     init_seed_path.push(corpus_dirs.clone());
     init_seed_path.push(PathBuf::from("init.bin"));
@@ -75,7 +76,8 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
         exit_elegantly();
     }
     unsafe {
-        SMM_INIT_FUZZ_EXIT_SNAPSHOT = None;
+        SMM_INIT_FUZZ_EXIT_SNAPSHOT = ptr::null_mut();
+
     }
 
     let corpus_dirs = [PathBuf::from(INIT_PHASE_CORPUS_DIR).join(PathBuf::from(format!("init_phase_corpus_{}/", unsafe {SMM_INIT_FUZZ_INDEX})))];
@@ -98,7 +100,7 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu = in_qemu.first_cpu().unwrap();
-        let exit_reason = qemu_run_once(in_qemu, &snapshot);
+        let exit_reason = qemu_run_once(in_qemu, &snapshot, 50000000);
         let exit_code;
         debug!("new run exit {:?}",exit_reason);
         if let Ok(qemu_exit_reason) = exit_reason
@@ -115,9 +117,10 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
                         },
                         4 => {
                             unsafe {
-                                if SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_none() {
-                                    info!("found the way to pass init function");
-                                    SMM_INIT_FUZZ_EXIT_SNAPSHOT = Some(FuzzerSnapshot::from_qemu(in_qemu));
+                                if SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() {
+                                    let box_snap = Box::new(FuzzerSnapshot::from_qemu(in_qemu));
+                                    // info!("found the way to pass init function");
+                                    SMM_INIT_FUZZ_EXIT_SNAPSHOT = Box::into_raw(box_snap);
                                 }
                             }
                             exit_code = ExitKind::Ok;
@@ -225,29 +228,31 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
 
     
     loop {
-        if unsafe { SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_some() } {
-            let exit_snapshot = unsafe { SMM_INIT_FUZZ_EXIT_SNAPSHOT.as_ref().unwrap() };
-            let exit_reason = qemu_run_once(qemu, &exit_snapshot);
-
+        if unsafe { !SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() } {
+            let exit_snapshot = unsafe { Box::from_raw(SMM_INIT_FUZZ_EXIT_SNAPSHOT) };
+            let exit_reason = qemu_run_once(qemu, &exit_snapshot,30000000);
+            let cmd : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
+            let arg1 : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
             if let Ok(ref qemu_exit_reason) = exit_reason {
                 if let QemuExitReason::SyncExit = qemu_exit_reason {
-                    let cmd : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
-                    let arg1 : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
-                    info!("init phase sync exit {:#x} {:#x}",cmd,arg1);
                     if cmd == 4 {
                         if arg1 == 3 {
+                            // snapshot.delete(qemu);
                             return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
                         }
                         else if arg1 == 5 {
+                            // snapshot.delete(qemu);
                             return SnapshotKind::StartOfSmmFuzzSnap(FuzzerSnapshot::from_qemu(qemu));
                         }
                     }
                     
                 }
             }
-        }
-        unsafe {
-            SMM_INIT_FUZZ_EXIT_SNAPSHOT = None;
+            unsafe {
+                exit_snapshot.delete(qemu);
+                SMM_INIT_FUZZ_EXIT_SNAPSHOT = ptr::null_mut();
+            }
+            warn!("smm init found {:?} {cmd:#x} {arg1:#x}",exit_reason);
         }
         fuzzer
             .fuzz_one(&mut stages, &mut executor, &mut state, &mut mgr)

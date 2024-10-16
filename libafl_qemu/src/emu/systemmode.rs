@@ -210,6 +210,13 @@ where
         self.qemu.create_fast_snapshot_filter(track, device_filter)
     }
 
+    #[must_use]
+    pub fn delete_fast_snapshot(
+        &self,
+        ptr : FastSnapshotPtr) {
+        self.qemu.delete_fast_snapshot(ptr);
+    }
+
     pub unsafe fn restore_fast_snapshot(&self, snapshot: FastSnapshotPtr) {
         self.qemu.restore_fast_snapshot(snapshot)
     }

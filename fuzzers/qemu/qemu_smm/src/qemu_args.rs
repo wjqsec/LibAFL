@@ -1,7 +1,8 @@
 use std::vec::*;
 use std::string::*;
+use std::ffi::{CString, CStr};
 
-const OVMF_MODE : &str = "RELEASE";
+const OVMF_MODE : &str = "DEBUG";
 pub fn gen_ovmf_qemu_args() -> Vec<String>
 {
     vec![
@@ -29,47 +30,53 @@ pub fn gen_ovmf_qemu_args() -> Vec<String>
 pub fn get_snapshot_dev_filter_list() -> Vec<String>    
 {
     vec![
-        "timer".to_string(),
-        "cpu_common".to_string(),
-        "cpu".to_string(),
-        "kvm-tpr-opt".to_string(),
-        "apic".to_string(),
-        "pflash_cfi01".to_string(),
-        "pflash_cfi01".to_string(),
-        "fw_cfg".to_string(),
-        "0000:00:00.0/mch".to_string(),
-        "PCIHost".to_string(),
-        "PCIBUS".to_string(),
-        "dma".to_string(),
-        "dma".to_string(),
-        "mc146818rtc".to_string(),
-        "0000:00:1f.0/ICH9LPC".to_string(),
-        "i8259".to_string(),
-        "i8259".to_string(),
-        "ioapic".to_string(),
-        "hpet".to_string(),
-        "i8254".to_string(),
-        "pcspk".to_string(),
-        "serial".to_string(),
-        "parallel_isa".to_string(),
-        "ps2kbd".to_string(),
-        "ps2mouse".to_string(),
-        "pckbd".to_string(),
-        "vmmouse".to_string(),
-        "port92".to_string(),
-        "0000:00:1f.2/ich9_ahci".to_string(),
-        "i2c_bus".to_string(),
-        "0000:00:1f.3/ich9_smb".to_string(),
-        "smbus-eeprom".to_string(),
-        "smbus-eeprom".to_string(),
-        "smbus-eeprom".to_string(),
-        "smbus-eeprom".to_string(),
-        "smbus-eeprom".to_string(),
-        "smbus-eeprom".to_string(),
-        "smbus-eeprom".to_string(),
-        "smbus-eeprom".to_string(),
-        "0000:00:01.0/vga".to_string(),
-        "0000:00:02.0/e1000e".to_string(),
-        "acpi_build".to_string(),
+        // CString::new("timer").unwrap().into_string().unwrap(),
+        // CString::new("cpu_common").unwrap().into_string().unwrap(),
+        // CString::new("cpu").unwrap().into_string().unwrap(),
+
+        // CString::new("kvm-tpr-opt").unwrap().into_string().unwrap(),
+        // CString::new("apic").unwrap().into_string().unwrap(),
+        CString::new("pflash_cfi01").unwrap().into_string().unwrap(),
+        CString::new("pflash_cfi01").unwrap().into_string().unwrap(),
+
+        // CString::new("fw_cfg").unwrap().into_string().unwrap(),
+        // CString::new("0000:00:00.0/mch").unwrap().into_string().unwrap(),
+        // CString::new("PCIHost").unwrap().into_string().unwrap(),
+        // CString::new("PCIBUS").unwrap().into_string().unwrap(),
+        // CString::new("dma").unwrap().into_string().unwrap(),
+        // CString::new("dma").unwrap().into_string().unwrap(),
+        // CString::new("mc146818rtc").unwrap().into_string().unwrap(),
+
+        CString::new("0000:00:1f.0/ICH9LPC").unwrap().into_string().unwrap(),
+
+        // CString::new("i8259").unwrap().into_string().unwrap(),
+        // CString::new("i8259").unwrap().into_string().unwrap(),
+        // CString::new("ioapic").unwrap().into_string().unwrap(),
+        // CString::new("hpet").unwrap().into_string().unwrap(),
+        // CString::new("i8254").unwrap().into_string().unwrap(),
+        // CString::new("pcspk").unwrap().into_string().unwrap(),
+        // CString::new("serial").unwrap().into_string().unwrap(),
+        // CString::new("parallel_isa").unwrap().into_string().unwrap(),
+        // CString::new("ps2kbd").unwrap().into_string().unwrap(),
+        // CString::new("ps2mouse").unwrap().into_string().unwrap(),
+        // CString::new("pckbd").unwrap().into_string().unwrap(),
+        // CString::new("vmmouse").unwrap().into_string().unwrap(),
+        // CString::new("port92").unwrap().into_string().unwrap(),
+
+        // CString::new("0000:00:1f.2/ich9_ahci").unwrap().into_string().unwrap(),
+        // CString::new("i2c_bus").unwrap().into_string().unwrap(),
+        // CString::new("0000:00:1f.3/ich9_smb").unwrap().into_string().unwrap(),
+
+        // CString::new("smbus-eeprom").unwrap().into_string().unwrap(),
+        // CString::new("smbus-eeprom").unwrap().into_string().unwrap(),
+        // CString::new("smbus-eeprom").unwrap().into_string().unwrap(),
+        // CString::new("smbus-eeprom").unwrap().into_string().unwrap(),
+        // CString::new("smbus-eeprom").unwrap().into_string().unwrap(),
+        // CString::new("smbus-eeprom").unwrap().into_string().unwrap(),
+        // CString::new("smbus-eeprom").unwrap().into_string().unwrap(),
+        // CString::new("smbus-eeprom").unwrap().into_string().unwrap(),
+        // CString::new("0000:00:01.0/vga").unwrap().into_string().unwrap(),
+        // CString::new("0000:00:02.0/e1000e").unwrap().into_string().unwrap(),
+        // CString::new("acpi_build").unwrap().into_string().unwrap(),
     ]
 }

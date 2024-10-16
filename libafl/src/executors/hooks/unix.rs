@@ -4,6 +4,7 @@ pub mod unix_signal_handler {
     use alloc::{boxed::Box, string::String, vec::Vec};
     use core::{mem::transmute, ptr::addr_of_mut};
     use std::{io::Write, panic};
+    use std::process::{Command, exit};
 
     use libafl_bolts::os::unix_signals::{ucontext_t, Handler, Signal};
     use libc::siginfo_t;
@@ -189,7 +190,10 @@ pub mod unix_signal_handler {
             &mut *(((core::ptr::from_mut(p) as *mut libc::c_void as usize) + 128)
                 as *mut libc::c_void as *mut ucontext_t)
         });
-
+        let _ = Command::new("stty")
+        .arg("sane")
+        .status()
+        .expect("Failed to execute stty sane");
         log::error!("Crashed with {signal}");
         if data.is_valid() {
             let executor = data.executor_mut::<E>();
