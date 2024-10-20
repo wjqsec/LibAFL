@@ -149,12 +149,12 @@ fn main() {
                 exit_elegantly();
             },
             SnapshotKind::StartOfSmmFuzzSnap(_) => { 
-                break; 
+                break;
             },
         };
         snapshot = init_phase_fuzz::<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, ()), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>(&mut emulator ,snapshot);
     }
-    info!("finish init phase fuzzing!");
+    
     exit_elegantly(); 
 
     // block_id.remove(true);

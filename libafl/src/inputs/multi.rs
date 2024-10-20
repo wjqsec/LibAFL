@@ -4,6 +4,9 @@
 //! possible to dynamically define a single input with dynamic typing. As such, [`MultipartInput`]
 //! requires that each subcomponent be the same subtype.
 
+use core::hash::{Hash, Hasher};
+use std::string::ToString;
+use crate::prelude::std::hash::DefaultHasher;
 use alloc::{
     string::String,
     vec::Vec,
@@ -154,12 +157,15 @@ where
     I: Input,
 {
     fn generate_name(&self, id: Option<CorpusId>) -> String {
-        self.ids
+        let mut h = DefaultHasher::new();
+        let content = self.ids
             .iter()
             .cloned()
             .zip(self.parts.iter().map(|i| i.generate_name(id)))
             .map(|(id, generated)| format!("{id:#x}-{generated}"))
             .collect::<Vec<_>>()
-            .join(",")
+            .join(",");
+        content.hash(&mut h);
+        h.finish().to_string()
     }
 }

@@ -230,9 +230,10 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
     loop {
         if unsafe { !SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() } {
             let exit_snapshot = unsafe { Box::from_raw(SMM_INIT_FUZZ_EXIT_SNAPSHOT) };
-            let exit_reason = qemu_run_once(qemu, &exit_snapshot,30000000);
+            let exit_reason = qemu_run_once(qemu, &exit_snapshot,300000000);
             let cmd : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
             let arg1 : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
+            let pc : GuestReg = cpu.read_reg(Regs::Rip).unwrap();
             if let Ok(ref qemu_exit_reason) = exit_reason {
                 if let QemuExitReason::SyncExit = qemu_exit_reason {
                     if cmd == 4 {
@@ -244,15 +245,23 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
                             // snapshot.delete(qemu);
                             return SnapshotKind::StartOfSmmFuzzSnap(FuzzerSnapshot::from_qemu(qemu));
                         }
+                        else if arg1 == 2 {
+                            // start_debug();
+                            let exit_reason2 = qemu_run_once(qemu, &exit_snapshot,300000000);
+                            let cmd2 : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
+                            let arg12 : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
+                            let pc2 : GuestReg = cpu.read_reg(Regs::Rip).unwrap();
+                            warn!("smm agin {:?} {pc2:#x} {cmd2:#x} {arg12:#x}",exit_reason2);
+                            exit_elegantly();
+                        }
                     }
-                    
                 }
             }
             unsafe {
                 exit_snapshot.delete(qemu);
                 SMM_INIT_FUZZ_EXIT_SNAPSHOT = ptr::null_mut();
             }
-            warn!("smm init found {:?} {cmd:#x} {arg1:#x}",exit_reason);
+            warn!("smm init found {:?} {pc:#x} {cmd:#x} {arg1:#x}",exit_reason);
         }
         fuzzer
             .fuzz_one(&mut stages, &mut executor, &mut state, &mut mgr)

@@ -22,17 +22,25 @@ static mut EXEC_COUNT : u64 = 0;
 
 static mut NEXT_EXIT : Option<SmmQemuExit> = None;  // use this variblae to prevent memory leak
 
-static mut INIT_PHASE_NUM_TIMEOUT_BBL : u64 = 0xffffffffff;
+static mut NUM_TIMEOUT_BBL : u64 = 0xffffffffff;
 
 
 pub static mut GLOB_INPUT : *mut StreamInputs = std::ptr::null_mut() as *mut StreamInputs;
 
 
+static mut DEBUG_TRACE : bool = false;
+pub fn start_debug() {
+    unsafe {
+        DEBUG_TRACE = true;
+    }
+}
 pub fn get_exec_count() -> u64 {
     unsafe {
         EXEC_COUNT
     }
 }
+
+
 pub fn set_exec_count(val :u64) {
     unsafe {
         EXEC_COUNT = val;
@@ -284,7 +292,7 @@ pub fn backdoor_common(cpu : CPU)
 
 pub fn set_num_timeout_bbl(bbl : u64) {
     unsafe {
-        INIT_PHASE_NUM_TIMEOUT_BBL = bbl;
+        NUM_TIMEOUT_BBL = bbl;
     }
 }
 pub fn bbl_common(cpu : CPU) {
@@ -292,7 +300,13 @@ pub fn bbl_common(cpu : CPU) {
     let eax : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
     let rdi : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
     
-    trace!("bbl-> {} {pc:#x} {eax:#x} {rdi:#x}",get_exec_count());
+    #[cfg(feature = "debug_trace")]
+    unsafe {
+        if DEBUG_TRACE {
+            info!("bbl-> {} {pc:#x} {eax:#x} {rdi:#x}",get_exec_count());
+        }  
+    }
+
     unsafe {
         match NEXT_EXIT {
             Some(SmmQemuExit::StreamNotFound) => {
@@ -309,7 +323,7 @@ pub fn bbl_common(cpu : CPU) {
         }
     }
 
-    if get_exec_count() > unsafe { INIT_PHASE_NUM_TIMEOUT_BBL } {
+    if get_exec_count() > unsafe { NUM_TIMEOUT_BBL } {
         cpu.exit_timeout();
     }
     set_exec_count(get_exec_count() + 1);
