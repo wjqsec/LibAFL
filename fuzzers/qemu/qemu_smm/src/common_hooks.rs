@@ -34,6 +34,11 @@ pub fn start_debug() {
         DEBUG_TRACE = true;
     }
 }
+pub fn stop_debug() {
+    unsafe {
+        DEBUG_TRACE = false;
+    }
+}
 pub fn get_exec_count() -> u64 {
     unsafe {
         EXEC_COUNT
@@ -296,16 +301,26 @@ pub fn set_num_timeout_bbl(bbl : u64) {
     }
 }
 pub fn bbl_common(cpu : CPU) {
-    let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
-    let eax : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
-    let rdi : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
+
     
     #[cfg(feature = "debug_trace")]
-    unsafe {
-        if DEBUG_TRACE {
-            info!("bbl-> {} {pc:#x} {eax:#x} {rdi:#x}",get_exec_count());
-        }  
+    {
+        let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
+        let rax : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
+        let rbx : GuestReg = cpu.read_reg(Regs::Rbx).unwrap();
+        let rcx : GuestReg = cpu.read_reg(Regs::Rcx).unwrap();
+        let rdx : GuestReg = cpu.read_reg(Regs::Rdx).unwrap();
+        let rsi : GuestReg = cpu.read_reg(Regs::Rsi).unwrap();
+        let rdi : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
+        let mut data : [u8 ; 16] = [0; 16];
+        unsafe {
+            cpu.read_mem(rax + 8,&mut data);
+            if DEBUG_TRACE {
+                info!("bbl-> {} pc:{pc:#x} rax:{rax:#x} rbx:{rbx:#x} rcx:{rcx:#x} rdx:{rdx:#x} rsi:{rsi:#x} rdi:{rdi:#x} {:02x}",get_exec_count(),data);
+            }  
+        }
     }
+    
 
     unsafe {
         match NEXT_EXIT {

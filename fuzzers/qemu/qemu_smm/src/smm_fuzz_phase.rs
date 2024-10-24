@@ -66,7 +66,7 @@ pub fn smm_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, 
     let mut snapshot = FuzzerSnapshot::new_empty();
     if let SnapshotKind::StartOfSmmFuzzSnap(sss) = snap {
         snapshot = sss;
-        snapshot.restore_fuzz_snapshot(emulator.qemu());
+        snapshot.restore_fuzz_snapshot(emulator.qemu(), true);
     }
     else {
         error!("init phase fuzz got non start of smm fuzz snapshot");
@@ -97,7 +97,7 @@ pub fn smm_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, 
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu = in_qemu.first_cpu().unwrap();
-        let exit_reason = qemu_run_once(in_qemu, &snapshot,10000000);
+        let exit_reason = qemu_run_once(in_qemu, &snapshot,10000000, false);
         let exit_code;
         info!("new run exit {:?}",exit_reason);
         if let Ok(qemu_exit_reason) = exit_reason
@@ -233,7 +233,7 @@ pub fn smm_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, 
             .unwrap();
     }
     let exit_snapshot = unsafe { SMM_INIT_FUZZ_EXIT_SNAPSHOT.as_ref().unwrap() };
-    let exit_reason = qemu_run_once(emulator.qemu(), &exit_snapshot,10000000);
+    let exit_reason = qemu_run_once(emulator.qemu(), &exit_snapshot,10000000, true);
 
     if let Ok(ref qemu_exit_reason) = exit_reason {
         if let QemuExitReason::SyncExit = qemu_exit_reason {

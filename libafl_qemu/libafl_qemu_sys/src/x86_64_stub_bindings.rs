@@ -9456,7 +9456,7 @@ extern "C" {
     pub fn syx_snapshot_free(snapshot: *mut SyxSnapshot);
 }
 extern "C" {
-    pub fn syx_snapshot_root_restore(snapshot: *mut SyxSnapshot);
+    pub fn syx_snapshot_root_restore(snapshot: *mut SyxSnapshot, full_root_restore: bool);
 }
 extern "C" {
     pub fn syx_snapshot_check(ref_snapshot: *mut SyxSnapshot) -> SyxSnapshotCheckResult;

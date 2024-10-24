@@ -272,8 +272,8 @@ impl Qemu {
         }
     }
 
-    pub unsafe fn restore_fast_snapshot(&self, snapshot: FastSnapshotPtr) {
-        libafl_qemu_sys::syx_snapshot_root_restore(snapshot)
+    pub unsafe fn restore_fast_snapshot(&self, snapshot: FastSnapshotPtr, full_root_restore : bool) {
+        libafl_qemu_sys::syx_snapshot_root_restore(snapshot, full_root_restore)
     }
 
     pub unsafe fn check_fast_snapshot(

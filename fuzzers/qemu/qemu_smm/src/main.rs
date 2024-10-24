@@ -84,7 +84,7 @@ fn main() {
 
     let mut snapshot = SnapshotKind::None;
     unsafe {
-        let exit_reason = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),10000000);
+        let exit_reason = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),10000000,false);
         if let Ok(qemu_exit_reason) = exit_reason {
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
                 let cmd : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
@@ -126,6 +126,7 @@ fn main() {
     //     sss.restore_fuzz_snapshot(qemu);
     //     qemu.run();
     //     sss.restore_fuzz_snapshot(qemu);
+    //     qemu.run();
     // }
     // exit_elegantly();
 
@@ -141,7 +142,9 @@ fn main() {
                 error!("got StartOfUefi"); 
                 exit_elegantly();
             },
-            SnapshotKind::StartOfSmmInitSnap(_) => { 
+            SnapshotKind::StartOfSmmInitSnap(snap) => {
+                snapshot = init_phase_fuzz::<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, ()), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>(&mut emulator ,&snap); 
+                snap.delete(qemu);
                 info!("passed one module");
             },
             SnapshotKind::EndOfSmmInitSnap(_) => { 
@@ -152,7 +155,7 @@ fn main() {
                 break;
             },
         };
-        snapshot = init_phase_fuzz::<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, ()), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>(&mut emulator ,snapshot);
+        
     }
     
     exit_elegantly(); 

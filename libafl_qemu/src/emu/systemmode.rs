@@ -152,7 +152,7 @@ impl IsSnapshotManager for FastSnapshotManager {
             .ok_or(SnapshotManagerError::SnapshotIdNotFound(*snapshot_id))?;
 
         unsafe {
-            qemu.restore_fast_snapshot(fast_snapshot_ptr);
+            qemu.restore_fast_snapshot(fast_snapshot_ptr,false);
         }
 
         Ok(())
@@ -218,7 +218,7 @@ where
     }
 
     pub unsafe fn restore_fast_snapshot(&self, snapshot: FastSnapshotPtr) {
-        self.qemu.restore_fast_snapshot(snapshot)
+        self.qemu.restore_fast_snapshot(snapshot,false)
     }
 
     pub fn list_devices(&self) -> Vec<String> {

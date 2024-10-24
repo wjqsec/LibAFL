@@ -128,6 +128,9 @@ impl<I> MultipartInput<I> {
 
     /// Adds a part to this input, potentially with the same id as an existing part.
     pub fn add_part(&mut self, id: u128, part: I) {
+        if self.ids.contains(&id) {
+            return;
+        }
         self.parts.push(part);
         self.ids.push(id);
     }

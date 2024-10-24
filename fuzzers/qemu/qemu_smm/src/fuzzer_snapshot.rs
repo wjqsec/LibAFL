@@ -48,11 +48,11 @@ impl FuzzerSnapshot {
             qemu.delete_fast_snapshot(snap);
         }
     }
-    pub fn restore_fuzz_snapshot(&self, qemu : Qemu) {
+    pub fn restore_fuzz_snapshot(&self, qemu : Qemu, full_root_restore : bool) {
         unsafe {
             IN_SMM_INIT = self.in_smm_init;
             IN_SMI_HANDLE = self.in_smi;
-            qemu.restore_fast_snapshot(self.qemu_snapshot.unwrap());
+            qemu.restore_fast_snapshot(self.qemu_snapshot.unwrap(), full_root_restore);
         }
     }
 }

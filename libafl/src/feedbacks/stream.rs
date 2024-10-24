@@ -1,14 +1,14 @@
-use core::ops::DerefMut;
+use core::{borrow::{Borrow, BorrowMut}, ops::DerefMut};
 
 use alloc::{borrow::Cow, string::String};
-
+use crate::{corpus::Corpus, prelude::HasCorpus};
 use libafl_bolts::{
     impl_serdeany,
     tuples::{Handle, Handled, MatchNameRef},
     Named,
 };
 use serde::{Deserialize, Serialize};
-
+use crate::prelude::HasCurrentTestcase;
 use crate::{
     corpus::Testcase, events::EventFirer, executors::ExitKind, feedbacks::Feedback, inputs::{BytesInput, MultipartInput}, observers::{ObserversTuple, StdErrObserver, StdOutObserver}, state::State, Error, HasMetadata
 };
@@ -21,7 +21,7 @@ pub struct StreamFeedback {
 
 impl<S> Feedback<S> for StreamFeedback
 where
-    S: State<Input = MultipartInput<BytesInput>>,
+    S: HasCurrentTestcase<MultipartInput<BytesInput>> + State<Input = MultipartInput<BytesInput>> + HasCorpus<Input = MultipartInput<BytesInput>>,
 {
     #[allow(clippy::wrong_self_convention)]
     fn is_interesting<EM, OT>(
@@ -49,7 +49,7 @@ where
     #[inline]
     fn append_metadata<EM, OT>(
         &mut self,
-        _state: &mut S,
+        state: &mut S,
         _manager: &mut EM,
         observers: &OT,
         testcase: &mut Testcase<S::Input>,
@@ -59,9 +59,20 @@ where
         EM: EventFirer<State = S>,
     {
         let observer = observers.get(&self.observer_handle).unwrap();
-        for new_stream in observer.get_newstream().into_iter() {
-            testcase.input_mut().as_mut().unwrap().add_part(new_stream, BytesInput::new(vec![0x00,0x00,0x00,0x00]));
+        if observer.has_newstream() {
+            let n_all = state.corpus().count_all();
+            for i in 0..n_all {
+                let idx = state.corpus().nth_from_all(i);
+                for new_stream in observer.get_newstream().into_iter() {
+                    state.corpus().get(idx).and_then( | t | 
+                    Ok(t.borrow_mut().input_mut().as_mut().unwrap().add_part(new_stream, BytesInput::new(vec![0x00,0x00,0x00,0x00])))).unwrap();
+                }
+            }
+            for new_stream in observer.get_newstream().into_iter() {
+                testcase.input_mut().as_mut().unwrap().add_part(new_stream, BytesInput::new(vec![0x00,0x00,0x00,0x00]));
+            }
         }
+        
         Ok(())
     }
 
