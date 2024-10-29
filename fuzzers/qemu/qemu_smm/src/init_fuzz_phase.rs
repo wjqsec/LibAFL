@@ -47,7 +47,7 @@ use crate::config::*;
 use crate::exit_qemu::*;
 use crate::fuzzer_snapshot::*;
 use crate::qemu_control::*;
-
+use crate::smm_fuzz_qemu_cmds::*;
 
 static mut SMM_INIT_FUZZ_EXIT_SNAPSHOT : *mut FuzzerSnapshot = ptr::null_mut();
 static mut SMM_INIT_FUZZ_INDEX : u64 = 1;
@@ -104,12 +104,12 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
                 let arg1 : GuestReg = in_cpu.read_reg(Regs::Rdi).unwrap();
                 let pc : GuestReg = in_cpu.read_reg(Regs::Rip).unwrap();
                 debug!("qemu_run_to_end sync exit {:#x} {:#x} {:#x}",cmd,arg1,pc);
-                if cmd == 4 {
+                if cmd == LIBAFL_QEMU_COMMAND_END {
                     match arg1 {
-                        2 => {
+                        LIBAFL_QEMU_END_CRASH => {
                             exit_code = ExitKind::Crash;
                         },
-                        4 => {
+                        LIBAFL_QEMU_END_SMM_INIT_END => {
                             unsafe {
                                 if SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() {
                                     let box_snap = Box::new(FuzzerSnapshot::from_qemu(in_qemu));
@@ -224,18 +224,18 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
     loop {
         if unsafe { !SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() } {
             let exit_snapshot = unsafe { Box::from_raw(SMM_INIT_FUZZ_EXIT_SNAPSHOT) };
-            let mut exit_reason = qemu_run_once(qemu, &exit_snapshot,20000000, true);
+            let mut exit_reason = qemu_run_once(qemu, &exit_snapshot,800000000, true);
             let cmd : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
             let arg1 : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
             let pc : GuestReg = cpu.read_reg(Regs::Rip).unwrap();
             if let Ok(ref qemu_exit_reason) = exit_reason {
                 if let QemuExitReason::SyncExit = qemu_exit_reason {
-                    if cmd == 4 {
-                        if arg1 == 3 {
+                    if cmd == LIBAFL_QEMU_COMMAND_END {
+                        if arg1 == LIBAFL_QEMU_END_SMM_INIT_START {
                             return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
                         }
-                        else if arg1 == 5 {
-                            return SnapshotKind::StartOfSmmFuzzSnap(FuzzerSnapshot::from_qemu(qemu));
+                        else if arg1 == LIBAFL_QEMU_END_SMM_MODULE_START {
+                            return SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::from_qemu(qemu));
                         }
                     }
                 } else if let QemuExitReason::End(_) = qemu_exit_reason {

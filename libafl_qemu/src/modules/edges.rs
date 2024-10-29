@@ -3,6 +3,7 @@ use std::{cell::UnsafeCell, cmp::max};
 use hashbrown::{hash_map::Entry, HashMap};
 use libafl::{inputs::UsesInput, HasMetadata};
 use libafl_qemu_sys::GuestAddr;
+use crate::qemu::HookId;
 #[cfg(emulation_mode = "systemmode")]
 use libafl_qemu_sys::GuestPhysAddr;
 pub use libafl_targets::{
@@ -19,7 +20,7 @@ use crate::{
         hash_me, EmulatorModule, EmulatorModuleTuple, HasInstrumentationFilter, IsFilter,
         QemuInstrumentationAddressRangeFilter,
     },
-    qemu::Hook,
+    qemu::Hook, EdgeHookId,
 };
 
 #[cfg_attr(
@@ -49,6 +50,7 @@ libafl_bolts::impl_serdeany!(QemuEdgesMapMetadata);
 pub struct EdgeCoverageModule {
     address_filter: QemuInstrumentationAddressRangeFilter,
     use_hitcounts: bool,
+    hook_id : Option<EdgeHookId>,
 }
 
 #[cfg(emulation_mode = "systemmode")]
@@ -57,6 +59,7 @@ pub struct EdgeCoverageModule {
     address_filter: QemuInstrumentationAddressRangeFilter,
     paging_filter: QemuInstrumentationPagingFilter,
     use_hitcounts: bool,
+    hook_id : Option<EdgeHookId>,
 }
 
 #[cfg(emulation_mode = "usermode")]
@@ -66,6 +69,7 @@ impl EdgeCoverageModule {
         Self {
             address_filter,
             use_hitcounts: true,
+            hook_id : None,
         }
     }
 
@@ -74,6 +78,7 @@ impl EdgeCoverageModule {
         Self {
             address_filter,
             use_hitcounts: false,
+            hook_id : None,
         }
     }
 
@@ -94,6 +99,7 @@ impl EdgeCoverageModule {
             address_filter,
             paging_filter,
             use_hitcounts: true,
+            hook_id : None,
         }
     }
 
@@ -106,6 +112,7 @@ impl EdgeCoverageModule {
             address_filter,
             paging_filter,
             use_hitcounts: false,
+            hook_id : None,
         }
     }
 
@@ -157,9 +164,9 @@ impl<S> EmulatorModule<S> for EdgeCoverageModule
 where
     S: Unpin + UsesInput + HasMetadata,
 {
-    fn first_exec<ET>(&mut self, emulator_modules: &mut EmulatorModules<ET, S>)
-    where
-        ET: EmulatorModuleTuple<S>,
+    fn pre_exec<ET>(&mut self, emulator_modules: &mut EmulatorModules<ET, S>, _input: &<S as UsesInput>::Input)
+        where
+            ET: EmulatorModuleTuple<S>, 
     {
         if self.use_hitcounts {
             // emulator_modules.edges(
@@ -174,6 +181,7 @@ where
                     Some(libafl_qemu_sys::libafl_jit_trace_edge_hitcount),
                 );
             }
+            self.hook_id = Some(hook_id);
         } else {
             // emulator_modules.edges(
             //     Hook::Function(gen_unique_edge_ids::<ET, S>),
@@ -187,8 +195,28 @@ where
                     Some(libafl_qemu_sys::libafl_jit_trace_edge_single),
                 );
             }
+            self.hook_id = Some(hook_id);
         }
     }
+
+    fn post_exec<OT, ET>(
+            &mut self,
+            _emulator_modules: &mut EmulatorModules<ET, S>,
+            _input: &<S as UsesInput>::Input,
+            _observers: &mut OT,
+            _exit_kind: &mut libafl::prelude::ExitKind,
+        ) where
+            OT: libafl::prelude::ObserversTuple<S>,
+            ET: EmulatorModuleTuple<S>, 
+    {
+        self.hook_id.unwrap().remove(false);
+    }
+    // fn first_exec<ET>(&mut self, emulator_modules: &mut EmulatorModules<ET, S>)
+    // where
+    //     ET: EmulatorModuleTuple<S>,
+    // {
+        
+    // }
 }
 
 pub type CollidingEdgeCoverageModule = EdgeCoverageChildModule;

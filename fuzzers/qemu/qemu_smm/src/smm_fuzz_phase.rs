@@ -4,6 +4,7 @@ use std::fmt::format;
 use std::{path::PathBuf, process};
 use libafl_bolts::math;
 use log::*;
+use std::ptr;
 use libafl::{
     corpus::Corpus, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, CachedOnDiskCorpus, PowerQueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
 };
@@ -11,7 +12,7 @@ use libafl_bolts::tuples::MatchNameRef;
 use libafl::feedbacks::stream::StreamFeedback;
 use libafl::inputs::multi::MultipartInput;
 use std::sync::{Arc, Mutex};
-use std::fs;
+use std::{error, fs};
 use libafl_bolts::{
     current_nanos,
     ownedref::OwnedMutSlice,
@@ -46,47 +47,57 @@ use crate::config::*;
 use crate::exit_qemu::*;
 use crate::fuzzer_snapshot::*;
 use crate::qemu_control::*;
+use crate::smm_fuzz_qemu_cmds::*;
 
 
-static mut SMM_INIT_FUZZ_EXIT_SNAPSHOT : Option<FuzzerSnapshot> = None;
-static mut SMM_INIT_FUZZ_INDEX : u64 = 1;
-
-fn gen_init_random_seed(corpus_dirs : &PathBuf) {
+fn gen_init_random_seed(dir : &PathBuf) {
     let mut initial_input = MultipartInput::<BytesInput>::new();
     initial_input.add_part(0 as u128, BytesInput::new(DEFAULT_STREAM_DATA.to_vec()));
     let mut init_seed_path = PathBuf::new(); 
-    init_seed_path.push(corpus_dirs.clone());
+    init_seed_path.push(dir.clone());
     init_seed_path.push(PathBuf::from("init.bin"));
     initial_input.to_file(init_seed_path).unwrap();
 }
 
+fn run_to_smm_fuzz_point(qemu : Qemu, cpu : CPU, start_snapshot : &FuzzerSnapshot) -> FuzzerSnapshot {
+    // run to the start cause we are now at the start of the smm fuzz driver
+    let mut exit_reason = qemu_run_once(qemu, start_snapshot,10000000000, true);
+    let cmd : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
+    let arg1 : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
+    if let Ok(ref qemu_exit_reason) = exit_reason {
+        if let QemuExitReason::SyncExit = qemu_exit_reason {
+            if cmd == LIBAFL_QEMU_COMMAND_END {
+                if arg1 == LIBAFL_QEMU_END_SMM_FUZZ_START {
+                    return FuzzerSnapshot::from_qemu(qemu);
+                }
+                else {
+                    error!("got error while going to the smi fuzz point");
+                    exit_elegantly();
+                }
+            }
+        } else if let QemuExitReason::End(_) = qemu_exit_reason {
+            error!("got error while going to the smi fuzz point");
+            exit_elegantly();
+        }
+    }
+    return FuzzerSnapshot::new_empty();
+}
 
-pub fn smm_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, ()), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>, snap : SnapshotKind) -> SnapshotKind 
+
+pub fn smm_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, ()), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>, snapshot : &FuzzerSnapshot) -> SnapshotKind 
 {
-    let mut snapshot = FuzzerSnapshot::new_empty();
-    if let SnapshotKind::StartOfSmmFuzzSnap(sss) = snap {
-        snapshot = sss;
-        snapshot.restore_fuzz_snapshot(emulator.qemu(), true);
-    }
-    else {
-        error!("init phase fuzz got non start of smm fuzz snapshot");
-        exit_elegantly();
-    }
-
-    unsafe {
-        SMM_INIT_FUZZ_EXIT_SNAPSHOT = None;
-    }
-
-    let corpus_dirs = [PathBuf::from(INIT_PHASE_CORPUS_DIR).join(PathBuf::from(format!("init_phase_corpus_{}/", unsafe {SMM_INIT_FUZZ_INDEX})))];
-    let objective_dir = PathBuf::from(INIT_PHASE_SOLUTION_DIR).join(PathBuf::from(format!("init_phase_crash_{}/", unsafe {SMM_INIT_FUZZ_INDEX})));
-    fs::create_dir_all(corpus_dirs[0].clone()).unwrap();
+    let qemu = emulator.qemu();
+    let cpu: CPU = qemu.first_cpu().unwrap();
+    let corpus_dir = PathBuf::from(INIT_PHASE_CORPUS_DIR).join(PathBuf::from(format!("init_phase_corpus_fuzz/")));
+    let objective_dir = PathBuf::from(INIT_PHASE_SOLUTION_DIR).join(PathBuf::from(format!("init_phase_crash_fuzz/")));
+    let seed_dirs = [PathBuf::from(INIT_PHASE_SEED_DIR).join(PathBuf::from(format!("init_phase_seed_fuzz/")))];
+    fs::create_dir_all(corpus_dir.clone()).unwrap();
     fs::create_dir_all(objective_dir.clone()).unwrap();
-    gen_init_random_seed(&corpus_dirs[0]);
-    unsafe {
-        SMM_INIT_FUZZ_INDEX += 1;
-    }
-    
+    fs::create_dir_all(seed_dirs[0].clone()).unwrap();
+    gen_init_random_seed(&seed_dirs[0]);
 
+    let smi_fuzz_snapshot = run_to_smm_fuzz_point(qemu, cpu, snapshot);
+    exit_elegantly();
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         
         debug!("new run");
@@ -97,9 +108,9 @@ pub fn smm_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, 
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu = in_qemu.first_cpu().unwrap();
-        let exit_reason = qemu_run_once(in_qemu, &snapshot,10000000, false);
+        let exit_reason = qemu_run_once(in_qemu, &smi_fuzz_snapshot, 50000000,false);
         let exit_code;
-        info!("new run exit {:?}",exit_reason);
+        debug!("new run exit {:?}",exit_reason);
         if let Ok(qemu_exit_reason) = exit_reason
         {
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
@@ -107,32 +118,29 @@ pub fn smm_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, 
                 let arg1 : GuestReg = in_cpu.read_reg(Regs::Rdi).unwrap();
                 let pc : GuestReg = in_cpu.read_reg(Regs::Rip).unwrap();
                 debug!("qemu_run_to_end sync exit {:#x} {:#x} {:#x}",cmd,arg1,pc);
-                if cmd == 4 {
+                if cmd == LIBAFL_QEMU_COMMAND_END {
                     match arg1 {
-                        2 => {
+                        LIBAFL_QEMU_END_CRASH => {
                             exit_code = ExitKind::Crash;
                         },
-                        4 => {
-                            unsafe {
-                                if SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_none() {
-                                    SMM_INIT_FUZZ_EXIT_SNAPSHOT = Some(FuzzerSnapshot::from_qemu(in_qemu));
-                                }
-                            }
+                        LIBAFL_QEMU_END_SMM_FUZZ_END => {
                             exit_code = ExitKind::Ok;
                         },
                         _ => {
+                            error!("exit error with sync exit arg {:#x}",arg1);
                             exit_elegantly();
                             exit_code = ExitKind::Ok;
                         }
                     }
                 }
                 else {
+                    error!("exit error with sync exit cmd {:#x}",cmd);
                     exit_elegantly();
                     exit_code = ExitKind::Ok;
                 }
             }
             else if let QemuExitReason::Timeout = qemu_exit_reason {
-                exit_code = ExitKind::Ok;
+                exit_code = ExitKind::Timeout;
             }
             else if let QemuExitReason::StreamNotFound = qemu_exit_reason {
                 exit_code = ExitKind::Ok;
@@ -141,19 +149,23 @@ pub fn smm_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, 
                 exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
+                error!("ctrl-C");
                 exit_elegantly();
                 exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason {
+                error!("Unexpected breakpoint hit");
                 exit_elegantly();
                 exit_code = ExitKind::Ok;
             }
             else {
+                error!("Unexpected exit");
                 exit_elegantly();
                 exit_code = ExitKind::Ok;
             }
         }
         else    {
+            error!("Unexpected exit");
             exit_elegantly();
             exit_code = ExitKind::Ok;
         }
@@ -183,7 +195,7 @@ pub fn smm_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, 
 
     let mut state = StdState::new(
         StdRand::with_seed(current_nanos()),
-        CachedOnDiskCorpus::<MultipartInput<BytesInput>>::new(corpus_dirs[0].clone(),10 * 4096).unwrap(),
+        CachedOnDiskCorpus::<MultipartInput<BytesInput>>::new(corpus_dir.clone(),10 * 4096).unwrap(),
         CachedOnDiskCorpus::<MultipartInput<BytesInput>>::new(objective_dir,10 * 4096).unwrap(),
         &mut feedback,
         // Same for objective feedbacks
@@ -191,7 +203,7 @@ pub fn smm_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, 
     ).unwrap();
 
     let mon = SimpleMonitor::new(|s| 
-        debug!("{s}")  
+        info!("{s}")  
     );
     let mut mgr = SimpleEventManager::new(mon);
     let scheduler = PowerQueueScheduler::new(&mut state, &mut edges_observer, PowerSchedule::FAST);
@@ -209,11 +221,13 @@ pub fn smm_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, 
     )
     .expect("Failed to create QemuExecutor");
 
+    
+
     if state.must_load_initial_inputs() {
         state
-            .load_initial_inputs(&mut fuzzer, &mut executor, &mut mgr, &corpus_dirs)
+            .load_initial_inputs(&mut fuzzer, &mut executor, &mut mgr, &seed_dirs)
             .unwrap_or_else(|_| {
-                error!("Failed to load initial corpus at {:?}", &corpus_dirs);
+                error!("Failed to load initial corpus at {:?}", &seed_dirs);
                 exit_elegantly();
             });
             info!("We imported {} inputs from disk.", state.corpus().count());
@@ -222,37 +236,9 @@ pub fn smm_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, 
     let mut stages = tuple_list!(StdMutationalStage::new(mutator));
 
     
-    loop {
-        unsafe {
-            if SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_some() {
-                break;
-            }
-        }
-        fuzzer
-            .fuzz_one(&mut stages, &mut executor, &mut state, &mut mgr)
+    fuzzer
+            .fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)
             .unwrap();
-    }
-    let exit_snapshot = unsafe { SMM_INIT_FUZZ_EXIT_SNAPSHOT.as_ref().unwrap() };
-    let exit_reason = qemu_run_once(emulator.qemu(), &exit_snapshot,10000000, true);
-
-    if let Ok(ref qemu_exit_reason) = exit_reason {
-        if let QemuExitReason::SyncExit = qemu_exit_reason {
-            let cmd : GuestReg = emulator.qemu().first_cpu().unwrap().read_reg(Regs::Rax).unwrap();
-            let arg1 : GuestReg = emulator.qemu().first_cpu().unwrap().read_reg(Regs::Rdi).unwrap();
-            if cmd == 4 {
-                if arg1 == 3 {
-                    return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(emulator.qemu()));
-                }
-                else if arg1 == 5 {
-                    return SnapshotKind::StartOfSmmFuzzSnap(FuzzerSnapshot::from_qemu(emulator.qemu()));
-                }
-            }
-            
-        }
-        
-    }
-    error!("init phase does return correctly {:?}",exit_reason);
-    exit_elegantly();
     SnapshotKind::None
 
 }

@@ -17,6 +17,7 @@ pub enum SnapshotKind {
     StartOfUefiSnap(FuzzerSnapshot),
     StartOfSmmInitSnap(FuzzerSnapshot),
     EndOfSmmInitSnap(FuzzerSnapshot),
+    StartOfSmmModuleSnap(FuzzerSnapshot),
     StartOfSmmFuzzSnap(FuzzerSnapshot),
 }
 
