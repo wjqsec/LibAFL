@@ -80,7 +80,8 @@ fn main() {
     let cpu = qemu.first_cpu().unwrap();
     
     let backdoor_id = emulator.modules_mut().backdoor(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, addr : GuestAddr| {
-        backdoor_common(modules.qemu().first_cpu().unwrap());
+        let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
+        backdoor_common(fuzz_input, modules.qemu().first_cpu().unwrap());
     })));
 
     let mut snapshot = SnapshotKind::None;

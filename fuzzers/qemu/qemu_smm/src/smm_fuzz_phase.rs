@@ -52,7 +52,7 @@ use crate::smm_fuzz_qemu_cmds::*;
 
 fn gen_init_random_seed(dir : &PathBuf) {
     let mut initial_input = MultipartInput::<BytesInput>::new();
-    initial_input.add_part(0 as u128, BytesInput::new(DEFAULT_STREAM_DATA.to_vec()));
+    initial_input.add_part(0 as u128, BytesInput::new(DEFAULT_STREAM_DATA.to_vec()), 0x10);
     let mut init_seed_path = PathBuf::new(); 
     init_seed_path.push(dir.clone());
     init_seed_path.push(PathBuf::from("init.bin"));
@@ -88,16 +88,16 @@ pub fn smm_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, 
 {
     let qemu = emulator.qemu();
     let cpu: CPU = qemu.first_cpu().unwrap();
-    let corpus_dir = PathBuf::from(INIT_PHASE_CORPUS_DIR).join(PathBuf::from(format!("init_phase_corpus_fuzz/")));
-    let objective_dir = PathBuf::from(INIT_PHASE_SOLUTION_DIR).join(PathBuf::from(format!("init_phase_crash_fuzz/")));
-    let seed_dirs = [PathBuf::from(INIT_PHASE_SEED_DIR).join(PathBuf::from(format!("init_phase_seed_fuzz/")))];
+    let corpus_dir = PathBuf::from(INIT_PHASE_CORPUS_DIR).join(PathBuf::from(format!("smm_phase_corpus_fuzz/")));
+    let objective_dir = PathBuf::from(INIT_PHASE_SOLUTION_DIR).join(PathBuf::from(format!("smm_phase_crash_fuzz/")));
+    let seed_dirs = [PathBuf::from(INIT_PHASE_SEED_DIR).join(PathBuf::from(format!("smm_phase_seed_fuzz/")))];
     fs::create_dir_all(corpus_dir.clone()).unwrap();
     fs::create_dir_all(objective_dir.clone()).unwrap();
     fs::create_dir_all(seed_dirs[0].clone()).unwrap();
     gen_init_random_seed(&seed_dirs[0]);
 
     let smi_fuzz_snapshot = run_to_smm_fuzz_point(qemu, cpu, snapshot);
-    exit_elegantly();
+
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         
         debug!("new run");
@@ -182,7 +182,7 @@ pub fn smm_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, 
         .track_indices()
     };
     let time_observer = TimeObserver::new("time");
-    let stream_observer = StreamObserver::new("stream", unsafe {Arc::clone(&NEW_STREAM)});
+    let stream_observer = StreamObserver::new("stream", unsafe {Arc::clone(&STREAM_FEEDBACK)});
 
     let mut feedback = feedback_or!(
         MaxMapFeedback::new(&edges_observer),

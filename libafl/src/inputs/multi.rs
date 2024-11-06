@@ -21,8 +21,9 @@ use crate::{corpus::CorpusId, inputs::Input};
 /// related, or represent distinct parts of the input.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MultipartInput<I> {
-    parts: Vec<I>,
     ids: Vec<u128>,
+    parts: Vec<I>,
+    limits : Vec<usize>,
 }
 
 impl<I> Default for MultipartInput<I> {
@@ -38,9 +39,27 @@ impl<I> MultipartInput<I> {
         Self {
             parts: Vec::new(),
             ids: Vec::new(),
+            limits : Vec::new(),
         }
     }
-
+    pub fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+    //remove a stream
+    pub fn remove_part(&mut self, id : &u128) {
+        let mut index_to_remove = Vec::new();
+        for i in 0..self.ids.len() {
+            if self.ids[i] == *id {
+                index_to_remove.push(i);
+            }
+        }
+        for index in index_to_remove {
+            self.ids.remove(index);
+            self.parts.remove(index);
+            self.limits.remove(index);
+        }
+        
+    }
     fn idxs_to_skips(idxs: &mut [usize]) {
         for following in (1..idxs.len()).rev() {
             let first = idxs[following - 1];
@@ -88,6 +107,10 @@ impl<I> MultipartInput<I> {
         self.parts.get_mut(idx)
     }
 
+    pub fn part_limit(&self, idx : usize) -> usize {
+        self.limits.get(idx).unwrap().clone()
+    }
+
     /// Get the ids associated with the subparts of this input. Used to distinguish between the
     /// input components in the case where some parts may or may not be present, or in different
     /// orders.
@@ -95,7 +118,10 @@ impl<I> MultipartInput<I> {
     pub fn names(&self) -> &[u128] {
         &self.ids
     }
-
+    #[must_use]
+    pub fn limits(&self) -> &[usize] {
+        &self.limits
+    }
     /// Gets a reference to each part with the provided id.
     pub fn parts_by_name<'a, 'b>(
         &'b self,
@@ -127,12 +153,13 @@ impl<I> MultipartInput<I> {
     }
 
     /// Adds a part to this input, potentially with the same id as an existing part.
-    pub fn add_part(&mut self, id: u128, part: I) {
+    pub fn add_part(&mut self, id: u128, part: I, limit : usize) {
         if self.ids.contains(&id) {
             return;
         }
-        self.parts.push(part);
         self.ids.push(id);
+        self.parts.push(part);
+        self.limits.push(limit);
     }
 
     /// Iterate over the parts of this input; no order is specified.
@@ -143,13 +170,13 @@ impl<I> MultipartInput<I> {
 
 impl<I, It, S> From<It> for MultipartInput<I>
 where
-    It: IntoIterator<Item = (S, I)>,
+    It: IntoIterator<Item = (S, I, usize)>,
     S: Into<u128>,
 {
     fn from(parts: It) -> Self {
         let mut input = MultipartInput::new();
-        for (id, part) in parts {
-            input.add_part(id.into(), part);
+        for (id, part, limit) in parts {
+            input.add_part(id.into(), part, limit);
         }
         input
     }

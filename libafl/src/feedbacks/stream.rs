@@ -1,7 +1,7 @@
 use core::{borrow::{Borrow, BorrowMut}, ops::DerefMut};
 
 use alloc::{borrow::Cow, string::String};
-use crate::{corpus::Corpus, prelude::HasCorpus};
+use crate::{corpus::Corpus, inputs::HasMutatorBytes, prelude::HasCorpus};
 use libafl_bolts::{
     impl_serdeany,
     tuples::{Handle, Handled, MatchNameRef},
@@ -29,27 +29,21 @@ where
         _state: &mut S,
         _manager: &mut EM,
         _input: &S::Input,
-        observers: &OT,
+        _observers: &OT,
         _exit_kind: &ExitKind,
     ) -> Result<bool, Error>
     where
         EM: EventFirer<State = S>,
         OT: ObserversTuple<S>,
     {
-        // TODO Replace with match_name_type when stable
-        let observer = observers.get(&self.observer_handle).unwrap();
-        if observer.has_newstream() {
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+        Ok(false)
     }
 
     /// Append to the testcase the generated metadata in case of a new corpus item
     #[inline]
     fn append_metadata<EM, OT>(
         &mut self,
-        state: &mut S,
+        _state: &mut S,
         _manager: &mut EM,
         observers: &OT,
         testcase: &mut Testcase<S::Input>,
@@ -59,17 +53,17 @@ where
         EM: EventFirer<State = S>,
     {
         let observer = observers.get(&self.observer_handle).unwrap();
-        if observer.has_newstream() {
-            let n_all = state.corpus().count_all();
-            for i in 0..n_all {
-                let idx = state.corpus().nth_from_all(i);
-                for new_stream in observer.get_newstream().into_iter() {
-                    state.corpus().get(idx).and_then( | t | 
-                    Ok(t.borrow_mut().input_mut().as_mut().unwrap().add_part(new_stream, BytesInput::new(vec![0x00,0x00,0x00,0x00])))).unwrap();
+        for (id, tmp_generated, used, input, limit) in observer.get_newstream().into_iter() {
+            if tmp_generated {
+                testcase.input_mut().as_mut().unwrap().add_part(id, BytesInput::new(input[..used].to_vec()), limit);
+            } else {
+                if used == 0 {
+                    testcase.input_mut().as_mut().unwrap().remove_part(&id);
+                } else {
+                    for (_, input) in testcase.input_mut().as_mut().unwrap().parts_by_name_mut(&id) {
+                        input.resize(used, 0);
+                    }
                 }
-            }
-            for new_stream in observer.get_newstream().into_iter() {
-                testcase.input_mut().as_mut().unwrap().add_part(new_stream, BytesInput::new(vec![0x00,0x00,0x00,0x00]));
             }
         }
         

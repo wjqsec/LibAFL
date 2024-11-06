@@ -23,7 +23,7 @@ use crate::{
     random_corpus_id,
     state::{HasCorpus, HasMaxSize, HasRand},
 };
-
+use crate::prelude::State;
 /// Marker trait for if the default multipart input mutator implementation is appropriate.
 ///
 /// You should implement this type for your mutator if you just want a random part of the input to
@@ -34,18 +34,20 @@ pub trait DefaultMultipartMutator {}
 impl<I, M, S> Mutator<MultipartInput<I>, S> for M
 where
     M: DefaultMultipartMutator + Mutator<I, S>,
-    S: HasRand,
+    S: HasRand + State + HasMaxSize,
 {
     fn mutate(
         &mut self,
         state: &mut S,
         input: &mut MultipartInput<I>,
     ) -> Result<MutationResult, Error> {
-        if input.parts().is_empty() {
+        if input.parts().is_empty(){
             Ok(MutationResult::Skipped)
         } else {
-            let selected = state.rand_mut().below(input.parts().len());
+            let selected: usize = state.rand_mut().below(input.parts().len());
+            let limit = input.part_limit(selected);
             let mutated = input.part_mut(selected).unwrap();
+            state.set_max_size(limit);
             self.mutate(state, mutated)
         }
     }
@@ -124,6 +126,10 @@ where
         state: &mut S,
         input: &mut MultipartInput<I>,
     ) -> Result<MutationResult, Error> {
+        if input.is_empty() {
+            return Ok(MutationResult::Skipped);
+        }
+        // return Ok(MutationResult::Skipped);
         // we can eat the slight bias; number of parts will be small
         let name_choice = state.rand_mut().next() as usize;
         let part_choice = state.rand_mut().next() as usize;
@@ -134,7 +140,7 @@ where
             if id == *cur {
                 let choice = name_choice % input.names().len();
                 let name = input.names()[choice].clone();
-
+                let limit = input.part_limit(choice);
                 let other_size = input.parts()[choice].bytes().len();
                 if other_size < 2 {
                     return Ok(MutationResult::Skipped);
@@ -153,8 +159,11 @@ where
                     .map(|(id, part)| (id, part.bytes().len()));
 
                 if let Some((part_idx, size)) = maybe_size {
+                    if size >= limit {
+                        return Ok(MutationResult::Skipped);
+                    }
                     let target = state.rand_mut().below(size);
-                    let range = rand_range(state, other_size, min(other_size, size - target));
+                    let range = rand_range(state, other_size, limit - size - 1);
 
                     let [part, chosen] = match part_idx.cmp(&choice) {
                         Ordering::Less => input.parts_mut([part_idx, choice]),
@@ -176,10 +185,12 @@ where
 
         let mut other_testcase = state.corpus().get(id)?.borrow_mut();
         let other = other_testcase.load_input(state.corpus())?;
-
+        if other.is_empty() {
+            return Ok(MutationResult::Skipped);
+        }
         let choice = name_choice % other.names().len();
         let name = &other.names()[choice];
-
+        let limit = other.part_limit(choice);
         let other_size = other.parts()[choice].bytes().len();
         if other_size < 2 {
             return Ok(MutationResult::Skipped);
@@ -194,9 +205,11 @@ where
                 .unwrap();
             drop(other_testcase);
             let size = part.bytes().len();
-
+            if size >= limit {
+                return Ok(MutationResult::Skipped);
+            }
             let target = state.rand_mut().below(size);
-            let range = rand_range(state, other_size, min(other_size, size - target));
+            let range = rand_range(state, other_size, limit - size - 1);
 
             let other_testcase = state.corpus().get(id)?.borrow_mut();
             // No need to load the input again, it'll still be cached.
@@ -211,7 +224,7 @@ where
             ))
         } else {
             // just add it!
-            input.add_part(name.clone(), other.parts()[choice].clone());
+            input.add_part(name.clone(), other.parts()[choice].clone(), limit);
 
             Ok(MutationResult::Mutated)
         }
@@ -228,6 +241,9 @@ where
         state: &mut S,
         input: &mut MultipartInput<I>,
     ) -> Result<MutationResult, Error> {
+        if input.is_empty() {
+            return Ok(MutationResult::Skipped);
+        }
         // we can eat the slight bias; number of parts will be small
         let name_choice = state.rand_mut().next() as usize;
         let part_choice = state.rand_mut().next() as usize;
@@ -280,7 +296,9 @@ where
 
         let mut other_testcase = state.corpus().get(id)?.borrow_mut();
         let other = other_testcase.load_input(state.corpus())?;
-
+        if other.is_empty() {
+            return Ok(MutationResult::Skipped);
+        }
         let choice = name_choice % other.names().len();
         let name = &other.names()[choice];
 
@@ -314,7 +332,7 @@ where
             ))
         } else {
             // just add it!
-            input.add_part(name.clone(), other.parts()[choice].clone());
+            input.add_part(name.clone(), other.parts()[choice].clone(), other.part_limit(choice));
 
             Ok(MutationResult::Mutated)
         }
