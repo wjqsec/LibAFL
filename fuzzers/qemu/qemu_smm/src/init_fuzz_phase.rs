@@ -39,6 +39,14 @@ use libafl_qemu::EmulatorExitHandler;
 use libafl_qemu::modules::EmulatorModuleTuple;
 use libafl::prelude::State;
 use libafl::prelude::HasExecutions;
+use libafl_qemu::modules::CmpLogModule;
+use libafl_qemu::QemuExecutor;
+use libafl_qemu::modules::cmplog::CmpLogObserver;
+use libafl::executors::ShadowExecutor;
+use libafl::stages::ShadowTracingStage;
+use libafl_bolts::tuples::Merge;
+use libafl::prelude::tokens_mutations;
+use libafl::mutators::I2SRandReplace;
 use std::env;
 use crate::stream_input::*;
 use crate::qemu_args::*;
@@ -62,7 +70,7 @@ fn gen_init_random_seed(dir : &PathBuf) {
 }
 
 
-pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, ()), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>, snapshot : &FuzzerSnapshot) -> SnapshotKind 
+pub fn init_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, (CmpLogModule, ())), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>, snapshot : &FuzzerSnapshot) -> SnapshotKind 
 {
     let qemu = emulator.qemu();
     let cpu = qemu.first_cpu().unwrap();
@@ -170,7 +178,7 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
     };
     let time_observer = TimeObserver::new("time");
     let stream_observer = StreamObserver::new("stream", unsafe {Arc::clone(&STREAM_FEEDBACK)});
-
+    let cmplog_observer = CmpLogObserver::new("cmplog", true);
     let mut feedback = feedback_or!(
         MaxMapFeedback::new(&edges_observer),
         TimeFeedback::new(&time_observer),
@@ -217,8 +225,14 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
             });
             info!("We imported {} inputs from disk.", state.corpus().count());
     }
-    let mutator = StdScheduledMutator::new(havoc_mutations());
-    let mut stages = tuple_list!(StdMutationalStage::new(mutator));
+
+    let mutator = StdScheduledMutator::new(havoc_mutations().merge(tokens_mutations()));
+    let mut shadow_executor = ShadowExecutor::new(executor, tuple_list!(cmplog_observer));
+    let i2s = StdMutationalStage::new(StdScheduledMutator::new(tuple_list!(
+        I2SRandReplace::new()
+    )));
+
+    let mut stages = tuple_list!(ShadowTracingStage::new(&mut shadow_executor),i2s, StdMutationalStage::new(mutator));
 
     
     loop {
@@ -252,7 +266,7 @@ pub fn init_phase_fuzz<CM, EH, ET, S>(emulator: &mut Emulator<NopCommandManager,
             
         }
         fuzzer
-            .fuzz_one(&mut stages, &mut executor, &mut state, &mut mgr)
+            .fuzz_one(&mut stages, &mut shadow_executor, &mut state, &mut mgr)
             .unwrap();
     }
     

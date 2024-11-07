@@ -79,6 +79,24 @@ impl<I> MultipartInput<I> {
         &self.parts
     }
 
+    #[must_use]
+    pub fn part_by_id(&self, id : &u128) -> &I {
+        if let Some(index) = self.ids.iter().position(|&x| x == *id) {
+            &self.parts[index]
+        } else {
+            panic!("part by id, id not found\n");
+        }
+    }
+    #[must_use]
+    pub fn part_by_id_mut(&mut self, id : &u128) -> &mut I {
+        if let Some(index) = self.ids.iter().position(|&x| x == *id) {
+            &mut self.parts[index]
+        } else {
+            panic!("part by id mut, id not found\n");
+        }
+    }
+
+
     /// Access multiple parts mutably.
     ///
     /// ## Panics
@@ -155,7 +173,7 @@ impl<I> MultipartInput<I> {
     /// Adds a part to this input, potentially with the same id as an existing part.
     pub fn add_part(&mut self, id: u128, part: I, limit : usize) {
         if self.ids.contains(&id) {
-            return;
+            panic!("multi input does not support multiple same id inputs");
         }
         self.ids.push(id);
         self.parts.push(part);
@@ -165,6 +183,10 @@ impl<I> MultipartInput<I> {
     /// Iterate over the parts of this input; no order is specified.
     pub fn iter(&self) -> impl Iterator<Item = (&u128, &I)> {
         self.ids.iter().zip(self.parts())
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&u128, &mut I)> {
+        self.ids.iter().zip(self.parts.iter_mut())
     }
 }
 

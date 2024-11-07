@@ -163,7 +163,7 @@ where
                         return Ok(MutationResult::Skipped);
                     }
                     let target = state.rand_mut().below(size);
-                    let range = rand_range(state, other_size, limit - size - 1);
+                    let range = rand_range(state, other_size, limit - size);
 
                     let [part, chosen] = match part_idx.cmp(&choice) {
                         Ordering::Less => input.parts_mut([part_idx, choice]),

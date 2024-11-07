@@ -29,9 +29,11 @@ pub static mut GLOB_INPUT : *mut StreamInputs = std::ptr::null_mut() as *mut Str
 
 static mut SMI_SELECT_BUFFER_ADDR : u64 = 0;
 static mut SMI_SELECT_BUFFER_SIZE : u64 = 0;
+static mut SMI_SELECT_BUFFER_HOST_PTR : *mut u8 = 0 as *mut u8;
 
 static mut COMMBUF_ADDR : u64 = 0;
 static mut COMMBUF_SIZE : u64 = 0;
+static mut COMMBUF_HOST_PTR : *mut u8 = 0 as *mut u8;
 
 static mut DEBUG_TRACE : bool = false;
 pub fn start_debug() {
@@ -273,18 +275,29 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             unsafe {
                 SMI_SELECT_BUFFER_ADDR = arg1;
                 SMI_SELECT_BUFFER_SIZE = arg2;
+
+                let smi_select_buffer_phy_addr = cpu.get_phys_addr_with_offset(SMI_SELECT_BUFFER_ADDR).unwrap();
+                let smi_select_buffer_host_addr = cpu.get_host_addr(smi_select_buffer_phy_addr);
+                SMI_SELECT_BUFFER_HOST_PTR = smi_select_buffer_host_addr;
+                info!("smi select buffer {:#x} {:#x} {:#x} {:?}",SMI_SELECT_BUFFER_ADDR, SMI_SELECT_BUFFER_SIZE, smi_select_buffer_phy_addr, SMI_SELECT_BUFFER_HOST_PTR);
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_COMMBUF_INFO => {
             unsafe {
                 COMMBUF_ADDR = arg1;
                 COMMBUF_SIZE = arg2;
+                let commbuf_phy_addr = cpu.get_phys_addr_with_offset(COMMBUF_ADDR).unwrap();
+                let commbuf_host_addr = cpu.get_host_addr(commbuf_phy_addr);
+                COMMBUF_HOST_PTR = commbuf_host_addr;
+                info!("smi select buffer {:#x} {:#x} {:#x} {:?}",COMMBUF_ADDR, COMMBUF_SIZE, commbuf_phy_addr, COMMBUF_HOST_PTR);
+            
+
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_SMI_SELECT_FUZZ_DATA => {
             match fuzz_input.get_smi_select_info() {
                 Ok((fuzz_input_ptr, mut len)) => { 
-                    unsafe { cpu.write_mem(unsafe{SMI_SELECT_BUFFER_ADDR}, unsafe {slice::from_raw_parts(fuzz_input_ptr, len)}); }
+                    unsafe { SMI_SELECT_BUFFER_HOST_PTR.copy_from(fuzz_input_ptr, len); }
                     ret = len as u64;
                 },
                 Err(io_err) => {    
@@ -294,7 +307,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                             fuzz_input.insert_new_stream(id, tmp_stream);
                             match fuzz_input.get_smi_select_info() {
                                 Ok((fuzz_input_ptr, mut len)) => { 
-                                    unsafe { cpu.write_mem(unsafe{SMI_SELECT_BUFFER_ADDR}, unsafe {slice::from_raw_parts(fuzz_input_ptr, len)}); }
+                                    unsafe { SMI_SELECT_BUFFER_HOST_PTR.copy_from(fuzz_input_ptr, len); }
                                     ret = len as u64;
                                 },
                                 Err(io_err) => {    
@@ -315,7 +328,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             unsafe {
                 match fuzz_input.get_commbuf_data(arg1, arg2) {
                     Ok((fuzz_input_ptr, mut len)) => { 
-                        unsafe { cpu.write_mem(unsafe{COMMBUF_ADDR}, unsafe {slice::from_raw_parts(fuzz_input_ptr, len)}); }
+                        unsafe { COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, len); }
                         ret = len as u64;
                     },
                     Err(io_err) => {    
@@ -325,7 +338,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                 fuzz_input.insert_new_stream(id, tmp_stream);
                                 match fuzz_input.get_commbuf_data(arg1, arg2) {
                                     Ok((fuzz_input_ptr, mut len)) => { 
-                                        unsafe { cpu.write_mem(unsafe{COMMBUF_ADDR}, unsafe {slice::from_raw_parts(fuzz_input_ptr, len)}); }
+                                        unsafe { COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, len); }
                                         ret = len as u64;
                                     },
                                     Err(io_err) => {    

@@ -45,6 +45,7 @@ use libafl_qemu::GuestReg;
 use libafl_qemu::qemu::BlockHookId;
 use libafl_qemu::CPU;
 use libafl_qemu::DeviceSnapshotFilter;
+use libafl_qemu::modules::CmpLogModule;
 use std::env;
 use libafl_qemu::FastSnapshotPtr;
 use crate::stream_input::*;
@@ -73,7 +74,7 @@ fn main() {
     let env: Vec<(String, String)> = env::vars().collect();
     let qemu: Qemu = Qemu::init(args.as_slice(),env.as_slice()).unwrap();
     let mut emulator  = Emulator::new_with_qemu(qemu,
-        tuple_list!(EdgeCoverageModule::default()),
+        tuple_list!(EdgeCoverageModule::default(), CmpLogModule::default()),
         NopEmulatorExitHandler,
         NopCommandManager)
         .unwrap();
@@ -144,7 +145,7 @@ fn main() {
                 exit_elegantly();
             },
             SnapshotKind::StartOfSmmInitSnap(snap) => {
-                snapshot = init_phase_fuzz::<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, ()), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>(&mut emulator ,&snap); 
+                snapshot = init_phase_fuzz(&mut emulator ,&snap); 
                 snap.delete(qemu);
                 info!("passed one module");
             },
@@ -181,7 +182,7 @@ fn main() {
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
         pre_memrw_smm_fuzz_phase(pc, addr, size, out_addr,rw, value, fuzz_input, modules.qemu().first_cpu().unwrap());
     })));
-    smm_phase_fuzz::<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, ()), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>(&mut emulator ,&start_smm_module);
+    smm_phase_fuzz(&mut emulator ,&start_smm_module);
     
     
    

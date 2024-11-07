@@ -32,6 +32,7 @@ libafl_qemu_sys = { path = "../../../libafl_qemu/libafl_qemu_sys", features = [
   "x86_64",
   "systemmode",
 ] }
+libafl_targets = { path = "../../../libafl_targets/" }
 env_logger = "*"
 log = "*"
 once_cell = "1.19.0"

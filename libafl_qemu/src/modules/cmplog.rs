@@ -19,7 +19,7 @@ use crate::{
         hash_me, EmulatorModule, EmulatorModuleTuple, HasInstrumentationFilter, IsFilter,
         QemuInstrumentationAddressRangeFilter,
     },
-    qemu::Hook,
+    qemu::Hook, CmpHookId, HookId,
 };
 
 #[cfg_attr(
@@ -46,13 +46,17 @@ libafl_bolts::impl_serdeany!(QemuCmpsMapMetadata);
 
 #[derive(Debug)]
 pub struct CmpLogModule {
+    hook_id : Option<CmpHookId>,
     filter: QemuInstrumentationAddressRangeFilter,
 }
 
 impl CmpLogModule {
     #[must_use]
     pub fn new(filter: QemuInstrumentationAddressRangeFilter) -> Self {
-        Self { filter }
+        Self {
+            hook_id : None, 
+            filter,
+        }
     }
 
     #[must_use]
@@ -81,17 +85,29 @@ impl<S> EmulatorModule<S> for CmpLogModule
 where
     S: Unpin + UsesInput + HasMetadata,
 {
-    fn first_exec<ET>(&mut self, emulator_modules: &mut EmulatorModules<ET, S>)
-    where
-        ET: EmulatorModuleTuple<S>,
-    {
-        emulator_modules.cmps(
+    fn pre_exec<ET>(&mut self, emulator_modules: &mut EmulatorModules<ET, S>, _input: &<S as UsesInput>::Input)
+        where
+            ET: EmulatorModuleTuple<S>, {
+        self.hook_id = Some(emulator_modules.cmps(
             Hook::Function(gen_unique_cmp_ids::<ET, S>),
             Hook::Raw(trace_cmp1_cmplog),
             Hook::Raw(trace_cmp2_cmplog),
             Hook::Raw(trace_cmp4_cmplog),
             Hook::Raw(trace_cmp8_cmplog),
-        );
+        ));
+        
+    }
+
+    fn post_exec<OT, ET>(
+            &mut self,
+            _emulator_modules: &mut EmulatorModules<ET, S>,
+            _input: &<S as UsesInput>::Input,
+            _observers: &mut OT,
+            _exit_kind: &mut libafl::prelude::ExitKind,
+        ) where
+            OT: libafl::prelude::ObserversTuple<S>,
+            ET: EmulatorModuleTuple<S>, {
+        self.hook_id.unwrap().remove(false);
     }
 }
 
