@@ -24,12 +24,16 @@ const STREAM_MASK : u128 =           0xf000000000000000;
 pub enum StreamError {
     StreamNotFound(u128),
     StreamOutof(u128),
+    Unknown,
+    LargeDatasize(u64),
 }
 impl fmt::Display for StreamError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            StreamError::StreamNotFound(id) => write!(f, "Stream with ID {} not found", id),
-            StreamError::StreamOutof(id) => write!(f, "Stream with ID {} ran out of data", id),
+            StreamError::StreamNotFound(id) => write!(f, "Stream with ID {:#x} not found", id),
+            StreamError::StreamOutof(id) => write!(f, "Stream with ID {:#x} ran out of data", id),
+            StreamError::Unknown => write!(f, "Stream error Unknown"),
+            StreamError::LargeDatasize(size) => write!(f, "Stream error LargeDatasize {}",size),
         }
     }
 }
@@ -50,11 +54,11 @@ pub struct StreamInputs {
 
 fn get_stream_limit(id : u128) -> usize {
     let mut limit = match (id & STREAM_MASK) {
-        IO_STREAM_MASK => 64,
-        DRAM_STREAM_MASK => 4096,
+        IO_STREAM_MASK => 32,
+        DRAM_STREAM_MASK => 1024,
         COMMBUF_STREAM_MASK => 256,
         MSR_STREAM_MASK => 16,
-        STREAMSEQ_STREAM_MASK => 32,
+        STREAMSEQ_STREAM_MASK => 8,
         _ => {
             error!("expected stream mask id {:#x}",id);
             exit_elegantly();
@@ -126,6 +130,9 @@ impl StreamInputs {
         self.inputs.insert(id, tmp);
     }
     pub fn get_io_fuzz_data(&mut self, pc : u64, addr : u64, len : u64) -> Result<(*const u8), StreamError> {
+        if len > 4 {
+            return Err(StreamError::LargeDatasize(len));
+        }
         let id = ((pc as u128) << 64) | (addr as u128) | IO_STREAM_MASK;
         // let id =(addr as u128) | IO_STREAM_MASK;
         match self.inputs.entry(id) {
@@ -175,19 +182,29 @@ impl StreamInputs {
         }
     }
     pub fn get_dram_fuzz_data(&mut self, addr : u64, len : u64) -> Result<u64, StreamError> {
+        if len > 8 {
+            return Err(StreamError::LargeDatasize(len));
+        }
         let id = DRAM_STREAM_MASK;
         let mut ret : u64 = 0;
-        for i in 0..len {
-            let read_addr = addr + i;
-            match self.sparse_memory.read_byte(read_addr) {
-                Ok(value) => {
-                    ret = (ret << 8) | (value as u64)
-                }
-                Err(dram_error) => {
+        match self.sparse_memory.read_bytes(addr, len) {
+            Ok(data) => {
+                return Ok(data);
+            },
+            Err(err) => {
+                if let DramError::Uninit(uninit_addrs) = err {
                     match self.inputs.entry(id) {
                         std::collections::btree_map::Entry::Occupied(mut entry) => {
-                            if let Ok(fuzz_input_ptr) = entry.get_mut().get_input_len_ptr(len as usize) {
-                                ret = (ret << 8) | (unsafe {*fuzz_input_ptr} as u64);
+                            if let Ok(mut fuzz_input_ptr) = entry.get_mut().get_input_len_ptr(uninit_addrs.len()) {
+                                for uninit_addr in uninit_addrs {
+                                    self.sparse_memory.write_byte(uninit_addr, unsafe { fuzz_input_ptr.read() });
+                                    fuzz_input_ptr = unsafe { fuzz_input_ptr.add(1) };
+                                }
+                                if let Ok(data) = self.sparse_memory.read_bytes(addr, len) {
+                                    return Ok(data);
+                                } else {
+                                    return Err(StreamError::Unknown);
+                                }
                             }
                             else {
                                 return Err(StreamError::StreamOutof(id));
@@ -198,16 +215,14 @@ impl StreamInputs {
                         },
                     }
                 }
-            }
+                return Err(StreamError::Unknown);
+            },
         }
-        Ok(ret)
-    }
-    pub fn set_dram_value(&mut self, addr : u64, len : u64, value : u64) {
-        self.sparse_memory.write(addr, len, &value.to_le_bytes());
     }
 
-    pub fn set_dram_dummy_value(&mut self, value : u64) {
-        self.sparse_memory.write_qemu_dummy(value);
+    pub fn set_dram_value(&mut self, addr : u64, len : u64, data : &[u8]) {
+        self.sparse_memory.write_bytes(addr, len, data);
     }
+
 }
         

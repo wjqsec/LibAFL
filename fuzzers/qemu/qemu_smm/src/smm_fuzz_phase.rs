@@ -57,6 +57,10 @@ use crate::fuzzer_snapshot::*;
 use crate::qemu_control::*;
 use crate::smm_fuzz_qemu_cmds::*;
 
+static mut TIMEOUT_TIMES : u64 = 0;
+static mut END_TIMES : u64 = 0;
+static mut CRASH_TIMES : u64 = 0;
+static mut STREAM_OVER_TIMES : u64 = 0;
 
 fn gen_init_random_seed(dir : &PathBuf) {
     let mut initial_input = MultipartInput::<BytesInput>::new();
@@ -69,7 +73,7 @@ fn gen_init_random_seed(dir : &PathBuf) {
 
 fn run_to_smm_fuzz_point(qemu : Qemu, cpu : CPU, start_snapshot : &FuzzerSnapshot) -> FuzzerSnapshot {
     // run to the start cause we are now at the start of the smm fuzz driver
-    let mut exit_reason = qemu_run_once(qemu, start_snapshot,10000000000, true);
+    let mut exit_reason = qemu_run_once(qemu, start_snapshot,10000000000, true, false);
     let cmd : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
     let arg1 : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
     if let Ok(ref qemu_exit_reason) = exit_reason {
@@ -116,7 +120,7 @@ pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExit
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu = in_qemu.first_cpu().unwrap();
-        let exit_reason = qemu_run_once(in_qemu, &smi_fuzz_snapshot, 50000000,false);
+        let exit_reason = qemu_run_once(in_qemu, &smi_fuzz_snapshot, 50000000,false, true);
         let exit_code;
         debug!("new run exit {:?}",exit_reason);
         if let Ok(qemu_exit_reason) = exit_reason
@@ -129,9 +133,11 @@ pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExit
                 if cmd == LIBAFL_QEMU_COMMAND_END {
                     match arg1 {
                         LIBAFL_QEMU_END_CRASH => {
+                            unsafe {TIMEOUT_TIMES += 1;}
                             exit_code = ExitKind::Crash;
                         },
                         LIBAFL_QEMU_END_SMM_FUZZ_END => {
+                            unsafe {END_TIMES += 1;}
                             exit_code = ExitKind::Ok;
                         },
                         _ => {
@@ -148,12 +154,14 @@ pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExit
                 }
             }
             else if let QemuExitReason::Timeout = qemu_exit_reason {
+                unsafe {TIMEOUT_TIMES += 1;}
                 exit_code = ExitKind::Timeout;
             }
             else if let QemuExitReason::StreamNotFound = qemu_exit_reason {
                 exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::StreamOutof = qemu_exit_reason {
+                unsafe {STREAM_OVER_TIMES += 1;}
                 exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
@@ -199,7 +207,7 @@ pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExit
     );
     
     // A feedback to choose if an input is a solution or not
-    let mut objective = feedback_or_fast!(CrashFeedback::new(), TimeoutFeedback::new());
+    let mut objective = feedback_or_fast!(CrashFeedback::new());
 
     let mut state = StdState::new(
         StdRand::with_seed(current_nanos()),
@@ -211,7 +219,7 @@ pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExit
     ).unwrap();
 
     let mon = SimpleMonitor::new(|s| 
-        info!("{s}")  
+        info!("{s} end:{:?} stream:{:?} crash:{:?} timeout:{:?}",unsafe{END_TIMES}, unsafe{STREAM_OVER_TIMES}, unsafe{CRASH_TIMES}, unsafe{TIMEOUT_TIMES})  
     );
     let mut mgr = SimpleEventManager::new(mon);
     let scheduler = PowerQueueScheduler::new(&mut state, &mut edges_observer, PowerSchedule::FAST);

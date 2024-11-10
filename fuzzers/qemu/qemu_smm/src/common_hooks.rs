@@ -11,6 +11,7 @@ use std::slice;
 use crate::config::*;
 use crate::smm_fuzz_qemu_cmds::*;
 
+pub static mut IN_FUZZ : bool = false;
 
 pub static mut DUMMY_MEMORY_VIRT_ADDR : u64 = 0;
 pub static mut DUMMY_MEMORY_HOST_PTR : *mut u64 = 0 as *mut u64;
@@ -59,17 +60,11 @@ pub fn set_exec_count(val :u64) {
     }
 }
 
-fn post_io_read_common(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32, 
+fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut u8, 
                        fuzz_input : &mut StreamInputs, cpu : CPU)
 {   
-    if handled != 1 {
-        return;
-    }
-    
-    let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
-    let addr = base + offset;
-    
-    match fuzz_input.get_io_fuzz_data(pc, addr, size as u64) {
+
+    match fuzz_input.get_io_fuzz_data(pc, io_addr, size as u64) {
         Ok(fuzz_input_ptr) => { 
             unsafe {data.copy_from(fuzz_input_ptr, size as usize);}
         },
@@ -78,33 +73,35 @@ fn post_io_read_common(base : GuestAddr, offset : GuestAddr,size : usize, data :
                 StreamError::StreamNotFound(id) => {
                     let tmp_stream = vec![0u8 ; 32];
                     fuzz_input.insert_new_stream(id, tmp_stream);
-                    match fuzz_input.get_io_fuzz_data(pc, addr, size as u64) {
+                    match fuzz_input.get_io_fuzz_data(pc, io_addr, size as u64) {
                         Ok(fuzz_input_ptr) => { 
                             unsafe {data.copy_from(fuzz_input_ptr, size as usize);}
                         },
                         Err(io_err) => {    
                             match io_err {
-                                StreamError::StreamNotFound(id) => {
-                                    error!("io {id:#x} stream not found after added");
-                                    exit_elegantly();
-                                }
                                 StreamError::StreamOutof(id) => {
-                                    debug!("io {id:#x} stream used up");
                                     unsafe {
                                         NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
                                     }
                                 }
+                                _ => {
+                                    error!("io stream error {:?}",io_err);
+                                    exit_elegantly();
+                                }
+                                
                             }
                         }
                     }
                 },
                 StreamError::StreamOutof(id) => {
-                    debug!("io {id:#x} stream used up");
                     unsafe {
                         NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
                     }
-                    // cpu.exit_stream_outof();
                 },
+                _ => {
+                    error!("io stream error {:?}",io_err);
+                    exit_elegantly();
+                }
             }
         }
     }
@@ -123,34 +120,46 @@ fn post_io_read_common(base : GuestAddr, offset : GuestAddr,size : usize, data :
         
     };
 
-    debug!("post_io_read {pc:#x} {addr:#x} {size:#x} {value:#x} {handled:#x}");
+    debug!("post_io_read {pc:#x} {io_addr:#x} {size:#x} {value:#x}");
 
 }
 
-pub fn post_io_read_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32, 
+pub fn post_io_read_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, io_err : u32, 
     fuzz_input : &mut StreamInputs, cpu : CPU)
 {
+    let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
+    let addr = base + offset;
     unsafe {
-        if IN_SMM_INIT == false {
+        if IN_SMM_INIT == false || IN_FUZZ == false || io_err == 0 {
             return;
         }
     }
-    post_io_read_common(base, offset, size, data, handled, fuzz_input, cpu);
+    post_io_read_common(pc, addr, size, data, fuzz_input, cpu);
 }
-pub fn post_io_read_smm_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32, 
+pub fn post_io_read_smm_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, io_err : u32, 
     fuzz_input : &mut StreamInputs, cpu : CPU)
 {
+    let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
+    let addr = base + offset;
     unsafe {
-        if IN_SMI_HANDLE == false {
+        if IN_FUZZ == false || IN_SMI_HANDLE == false {
             return;
         }
+        if io_err == 0 && addr != 0xb2 && addr != 0xb3 {
+            return;
+        }
+        // if io_err == 0 {
+        //     return;
+        // }
     }
-    post_io_read_common(base, offset, size, data, handled, fuzz_input, cpu);
+    post_io_read_common(pc, addr, size, data, fuzz_input, cpu);
 }
 
 fn pre_io_write_common(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool, cpu : CPU)
 {
-
+    if unsafe {!IN_FUZZ} {
+        return;
+    }
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
     let value = match size {
         1 => unsafe { *( data as *mut u8) as u64},
@@ -188,8 +197,13 @@ pub fn pre_io_write_smm_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : u
 
 fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
 {
-    return;
-    if addr >= 0x7000000 && addr <= 0x8000000 {
+    if unsafe {!IN_FUZZ} { // not in fuzzing
+        return;
+    }
+    if addr >= 0x7000000 && addr <= 0x8000000 { // outside sram
+        return;
+    }
+    if addr >= unsafe {( COMMBUF_ADDR - 25 )} &&  addr <= unsafe {COMMBUF_ADDR + COMMBUF_SIZE} {  //outside comm buffer
         return;
     }
     if size > 16 {
@@ -198,9 +212,49 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
     }
 
     if rw == 0 { // read
+        match fuzz_input.get_dram_fuzz_data(addr, size) {
+            Ok(data) => { 
+                unsafe { 
+                    *DUMMY_MEMORY_HOST_PTR = data;
+                    *out_addr = DUMMY_MEMORY_VIRT_ADDR;
+                }
+            },
+            Err(io_err) => {    
+                match io_err {
+                    StreamError::StreamNotFound(id) => {
+                        let tmp_stream = vec![0xabu8 ; 30];
+                        fuzz_input.insert_new_stream(id, tmp_stream);
+                        match fuzz_input.get_dram_fuzz_data(addr,size) {
+                            Ok(data) => { 
+                                unsafe { 
+                                    *DUMMY_MEMORY_HOST_PTR = data;
+                                    *out_addr = DUMMY_MEMORY_VIRT_ADDR;
+                                }
+                            },
+                            Err(io_err) => {    
+                                error!("dram fuzz data generate error {:?}",io_err);
+                                exit_elegantly();
+                            }
+                        }
+                    },
+                    StreamError::StreamOutof(id) => {
+                        unsafe {
+                            NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+                        }
+                    }
+                    _ => {
+                        error!("dram fuzz data generate error {:?}",io_err);
+                        exit_elegantly();
+                    }
+                }
+            }
+        }
     }
     else if rw == 1 {   // write
-        // fuzz_input.set_dram_value(addr, size, val);
+        unsafe {
+            // *out_addr = DUMMY_MEMORY_VIRT_ADDR;
+            fuzz_input.set_dram_value(addr, size, &val.to_le_bytes());
+        }
     }
     else if rw == 2 {    // exch
 
@@ -212,9 +266,11 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
 
     }
     debug!("memread {:#x} {:#x} {:#x} {:#x}",pc,addr,size,rw);
+
 }
 pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
 {
+    return;
     unsafe {
         if IN_SMM_INIT == false {
             return;
@@ -289,7 +345,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 let commbuf_phy_addr = cpu.get_phys_addr_with_offset(COMMBUF_ADDR).unwrap();
                 let commbuf_host_addr = cpu.get_host_addr(commbuf_phy_addr);
                 COMMBUF_HOST_PTR = commbuf_host_addr;
-                info!("smi select buffer {:#x} {:#x} {:#x} {:?}",COMMBUF_ADDR, COMMBUF_SIZE, commbuf_phy_addr, COMMBUF_HOST_PTR);
+                info!("comm buffer {:#x} {:#x} {:#x} {:?}",COMMBUF_ADDR, COMMBUF_SIZE, commbuf_phy_addr, COMMBUF_HOST_PTR);
             
 
             }
@@ -303,7 +359,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 Err(io_err) => {    
                     match io_err {
                         StreamError::StreamNotFound(id) => {
-                            let tmp_stream = vec![0xabu8 ; 30];
+                            let tmp_stream = vec![0xabu8 ; 8];
                             fuzz_input.insert_new_stream(id, tmp_stream);
                             match fuzz_input.get_smi_select_info() {
                                 Ok((fuzz_input_ptr, mut len)) => { 
@@ -311,13 +367,13 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                     ret = len as u64;
                                 },
                                 Err(io_err) => {    
-                                    error!("smi info generate error");
+                                    error!("smi info generate error {:?}",io_err);
                                     exit_elegantly();
                                 }
                             }
                         },
                         _ => {
-                            error!("unexpected smi get info");
+                            error!("smi info generate error {:?}",io_err);
                             exit_elegantly();
                         },
                     }
@@ -342,13 +398,13 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                         ret = len as u64;
                                     },
                                     Err(io_err) => {    
-                                        error!("comm buffer generate error");
+                                        error!("comm buffer generate error {:?}",io_err);
                                         exit_elegantly();
                                     }
                                 }
                             },
                             _ => {
-                                error!("unexpected get comm buffer");
+                                error!("comm buffer generate error {:?}",io_err);
                                 exit_elegantly();
                             },
                         }

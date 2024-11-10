@@ -102,7 +102,7 @@ pub fn init_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExi
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu = in_qemu.first_cpu().unwrap();
-        let exit_reason = qemu_run_once(in_qemu, snapshot, 50000000,false);
+        let exit_reason = qemu_run_once(in_qemu, snapshot, 50000000,false, true);
         let exit_code;
         debug!("new run exit {:?}",exit_reason);
         if let Ok(qemu_exit_reason) = exit_reason
@@ -238,7 +238,7 @@ pub fn init_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExi
     loop {
         if unsafe { !SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() } {
             let exit_snapshot = unsafe { Box::from_raw(SMM_INIT_FUZZ_EXIT_SNAPSHOT) };
-            let mut exit_reason = qemu_run_once(qemu, &exit_snapshot,800000000, true);
+            let mut exit_reason = qemu_run_once(qemu, &exit_snapshot,800000000, true, false);
             let cmd : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
             let arg1 : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
             let pc : GuestReg = cpu.read_reg(Regs::Rip).unwrap();

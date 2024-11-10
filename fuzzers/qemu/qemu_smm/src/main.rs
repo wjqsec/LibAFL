@@ -87,7 +87,7 @@ fn main() {
 
     let mut snapshot = SnapshotKind::None;
     unsafe {
-        let exit_reason = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),10000000,false);
+        let exit_reason = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),10000000,false, false);
         if let Ok(qemu_exit_reason) = exit_reason {
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
                 let cmd : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
