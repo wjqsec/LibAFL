@@ -119,6 +119,9 @@ impl<I> MultipartInput<I> {
             panic!("arrayvec collection failed somehow")
         }
     }
+    pub fn id_idx(&self, idx : usize) -> u128 {
+        self.ids[idx]
+    }
 
     /// Get a specific part of this input by index.
     pub fn part_mut(&mut self, idx: usize) -> Option<&mut I> {
@@ -218,6 +221,6 @@ where
             .collect::<Vec<_>>()
             .join(",");
         content.hash(&mut h);
-        h.finish().to_string()
+        format!("{}-{}",self.ids.len().to_string(), h.finish().to_string())
     }
 }

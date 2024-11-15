@@ -6,7 +6,7 @@ use libafl_bolts::math;
 use log::*;
 use std::ptr;
 use libafl::{
-    corpus::Corpus, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, CachedOnDiskCorpus, PowerQueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
+    corpus::Corpus, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, CachedOnDiskCorpus, PowerQueueScheduler, QueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
 };
 use libafl_bolts::tuples::MatchNameRef;
 use libafl::feedbacks::stream::StreamFeedback;
@@ -80,6 +80,7 @@ fn run_to_smm_fuzz_point(qemu : Qemu, cpu : CPU, start_snapshot : &FuzzerSnapsho
         if let QemuExitReason::SyncExit = qemu_exit_reason {
             if cmd == LIBAFL_QEMU_COMMAND_END {
                 if arg1 == LIBAFL_QEMU_END_SMM_FUZZ_START {
+                    start_snapshot.delete(qemu);
                     return FuzzerSnapshot::from_qemu(qemu);
                 }
                 else {
@@ -109,7 +110,7 @@ pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExit
     gen_init_random_seed(&seed_dirs[0]);
 
     let smi_fuzz_snapshot = run_to_smm_fuzz_point(qemu, cpu, snapshot);
-
+    exit_elegantly();
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         
         debug!("new run");
@@ -133,7 +134,7 @@ pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExit
                 if cmd == LIBAFL_QEMU_COMMAND_END {
                     match arg1 {
                         LIBAFL_QEMU_END_CRASH => {
-                            unsafe {TIMEOUT_TIMES += 1;}
+                            unsafe {CRASH_TIMES += 1;}
                             exit_code = ExitKind::Crash;
                         },
                         LIBAFL_QEMU_END_SMM_FUZZ_END => {
@@ -222,7 +223,8 @@ pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExit
         info!("{s} end:{:?} stream:{:?} crash:{:?} timeout:{:?}",unsafe{END_TIMES}, unsafe{STREAM_OVER_TIMES}, unsafe{CRASH_TIMES}, unsafe{TIMEOUT_TIMES})  
     );
     let mut mgr = SimpleEventManager::new(mon);
-    let scheduler = PowerQueueScheduler::new(&mut state, &mut edges_observer, PowerSchedule::FAST);
+    // let scheduler = PowerQueueScheduler::new(&mut state, &mut edges_observer, PowerSchedule::FAST);
+    let scheduler = QueueScheduler::new();
     let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
 
 
@@ -237,7 +239,6 @@ pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExit
     )
     .expect("Failed to create QemuExecutor");
 
-    
 
     if state.must_load_initial_inputs() {
         state

@@ -11,15 +11,6 @@ fn cpuid_common(pc : GuestReg, in_eax: u32, out_eax: *mut u32,out_ebx: *mut u32,
     }
 }
 
-fn rdmsr_common(pc : GuestReg, in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32)
-{
-    unsafe {
-        let eax_info = *out_eax;
-        let edx_info = *out_edx;
-        debug!("rdmsr {pc:#x} {in_ecx:#x} {eax_info:#x} {edx_info:#x}");
-    }
-}
-
 fn wrmsr_common(pc : GuestReg, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32)
 {
     unsafe {

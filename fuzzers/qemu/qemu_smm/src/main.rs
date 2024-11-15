@@ -164,6 +164,8 @@ fn main() {
             },
         };
     }
+
+
     let smi_fuzz_snapshot = FuzzerSnapshot::from_qemu(qemu);
 
     devread_id.remove(true);
@@ -181,6 +183,10 @@ fn main() {
     let mut memrw_id = emulator.modules_mut().memrw(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr, rw : u32 , value : u128| {
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
         pre_memrw_smm_fuzz_phase(pc, addr, size, out_addr,rw, value, fuzz_input, modules.qemu().first_cpu().unwrap());
+    })));
+    let rdmsr_id = emulator.modules_mut().rdmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32| {
+        let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
+        rdmsr_smm_fuzz_phase(in_ecx, out_eax, out_edx, fuzz_input);
     })));
     smm_phase_fuzz(&mut emulator ,&start_smm_module);
     

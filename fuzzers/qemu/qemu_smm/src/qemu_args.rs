@@ -2,7 +2,7 @@ use std::vec::*;
 use std::string::*;
 use std::ffi::{CString, CStr};
 
-const OVMF_MODE : &str = "RELEASE";
+const OVMF_MODE : &str = "DEBUG";
 pub fn gen_ovmf_qemu_args() -> Vec<String>
 {
     vec![

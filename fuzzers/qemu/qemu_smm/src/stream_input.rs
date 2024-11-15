@@ -11,15 +11,16 @@ use std::slice;
 use libafl::inputs::HasMutatorBytes;
 use libafl_bolts::HasLen;
 use log::*;
+use rand::Rng;
 use libafl_qemu::Qemu;
 use std::fmt;
-const IO_STREAM_MASK : u128 =        0x1000000000000000;
-const DRAM_STREAM_MASK : u128 =      0x2000000000000000;
-const COMMBUF_STREAM_MASK : u128 =   0x3000000000000000;
-const MSR_STREAM_MASK : u128 =       0x4000000000000000;
-const STREAMSEQ_STREAM_MASK : u128 = 0x5000000000000000;
+const IO_STREAM_MASK : u128 =        0x10000000000000000000000000000000;
+const DRAM_STREAM_MASK : u128 =      0x20000000000000000000000000000000;
+const COMMBUF_STREAM_MASK : u128 =   0x30000000000000000000000000000000;
+const MSR_STREAM_MASK : u128 =       0x40000000000000000000000000000000;
+const STREAMSEQ_STREAM_MASK : u128 = 0x50000000000000000000000000000000;
 
-const STREAM_MASK : u128 =           0xf000000000000000;
+const STREAM_MASK : u128 =           0xf0000000000000000000000000000000;
 #[derive(Debug)]
 pub enum StreamError {
     StreamNotFound(u128),
@@ -55,9 +56,9 @@ pub struct StreamInputs {
 fn get_stream_limit(id : u128) -> usize {
     let mut limit = match (id & STREAM_MASK) {
         IO_STREAM_MASK => 32,
-        DRAM_STREAM_MASK => 1024,
-        COMMBUF_STREAM_MASK => 256,
-        MSR_STREAM_MASK => 16,
+        DRAM_STREAM_MASK => 256,
+        COMMBUF_STREAM_MASK => 128,
+        MSR_STREAM_MASK => 32,
         STREAMSEQ_STREAM_MASK => 8,
         _ => {
             error!("expected stream mask id {:#x}",id);
@@ -124,17 +125,28 @@ impl StreamInputs {
             tmp_inputs : BTreeMap::new(),
         }
     }
-    pub fn insert_new_stream(&mut self, id : u128, stream : Vec<u8>) {
-        self.tmp_inputs.insert(id, stream);
-        let tmp = StreamInput::new(self.tmp_inputs.get_mut(&id).unwrap().as_mut_ptr(), self.tmp_inputs.get(&id).unwrap().len(), true, get_stream_limit(id));
-        self.inputs.insert(id, tmp);
-    }
     pub fn get_io_fuzz_data(&mut self, pc : u64, addr : u64, len : u64) -> Result<(*const u8), StreamError> {
         if len > 4 {
             return Err(StreamError::LargeDatasize(len));
         }
         let id = ((pc as u128) << 64) | (addr as u128) | IO_STREAM_MASK;
         // let id =(addr as u128) | IO_STREAM_MASK;
+        match self.inputs.entry(id) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                if let Ok(fuzz_input_ptr) = entry.get_mut().get_input_len_ptr(len as usize) {
+                    return Ok(fuzz_input_ptr);
+                }
+                else {
+                    return Err(StreamError::StreamOutof(id));
+                }
+            },
+            std::collections::btree_map::Entry::Vacant(entry) => { 
+                return Err(StreamError::StreamNotFound(id));
+            },
+        }
+    }
+    pub fn get_msr_fuzz_data(&mut self, len : u64) -> Result<(*const u8), StreamError> {
+        let id = MSR_STREAM_MASK;
         match self.inputs.entry(id) {
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 if let Ok(fuzz_input_ptr) = entry.get_mut().get_input_len_ptr(len as usize) {
@@ -222,6 +234,17 @@ impl StreamInputs {
 
     pub fn set_dram_value(&mut self, addr : u64, len : u64, data : &[u8]) {
         self.sparse_memory.write_bytes(addr, len, data);
+    }
+
+    pub fn generate_random_bytes_stream(&mut self, id : u128) {
+        let len = (get_stream_limit(id) >> 1);
+        let mut rng = rand::thread_rng();
+        let mut stream = vec![0u8; len]; 
+        rng.fill(&mut stream[..]);
+
+        self.tmp_inputs.insert(id, stream);
+        let tmp = StreamInput::new(self.tmp_inputs.get_mut(&id).unwrap().as_mut_ptr(), self.tmp_inputs.get(&id).unwrap().len(), true, get_stream_limit(id));
+        self.inputs.insert(id, tmp);
     }
 
 }
