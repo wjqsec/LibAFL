@@ -13,17 +13,12 @@ use crate::smm_fuzz_qemu_cmds::*;
 
 pub static mut IN_FUZZ : bool = false;
 
-pub static mut DUMMY_MEMORY_VIRT_ADDR : u64 = 0;
-pub static mut DUMMY_MEMORY_HOST_PTR : *mut u64 = 0 as *mut u64;
-
-static mut EXEC_COUNT : u64 = 0;
+pub static mut GLOB_INPUT : *mut StreamInputs = std::ptr::null_mut() as *mut StreamInputs;
 
 static mut NEXT_EXIT : Option<SmmQemuExit> = None;  // use this variblae to prevent memory leak
 
-static mut NUM_TIMEOUT_BBL : u64 = 0xffffffffff;
-
-
-pub static mut GLOB_INPUT : *mut StreamInputs = std::ptr::null_mut() as *mut StreamInputs;
+pub static mut DUMMY_MEMORY_VIRT_ADDR : u64 = 0;
+pub static mut DUMMY_MEMORY_HOST_PTR : *mut u64 = 0 as *mut u64;
 
 static mut SMI_SELECT_BUFFER_ADDR : u64 = 0;
 static mut SMI_SELECT_BUFFER_SIZE : u64 = 0;
@@ -32,6 +27,9 @@ static mut SMI_SELECT_BUFFER_HOST_PTR : *mut u8 = 0 as *mut u8;
 static mut COMMBUF_ADDR : u64 = 0;
 static mut COMMBUF_SIZE : u64 = 0;
 static mut COMMBUF_HOST_PTR : *mut u8 = 0 as *mut u8;
+
+static mut HOB_ADDR : u64 = 0;
+static mut HOB_SIZE : u64 = 0;
 
 static mut DEBUG_TRACE : bool = false;
 pub fn start_debug() {
@@ -44,17 +42,27 @@ pub fn stop_debug() {
         DEBUG_TRACE = false;
     }
 }
+
+static mut EXEC_COUNT : u64 = 0;
 pub fn get_exec_count() -> u64 {
     unsafe {
         EXEC_COUNT
     }
 }
-
-
 pub fn set_exec_count(val :u64) {
     unsafe {
         EXEC_COUNT = val;
     }
+}
+
+static mut CURRENT_MODULE_ADDR : u64 = 0;
+static mut CURRENT_MODULE_END : u64 = 0;
+pub fn set_current_module(addr : u64, end : u64) {
+    unsafe {
+        CURRENT_MODULE_ADDR = addr;
+        CURRENT_MODULE_END = end;
+    }
+    info!("now processing module {:#x}-{:#x}",addr,end);
 }
 
 fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut u8, 
@@ -68,7 +76,7 @@ fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut 
         Err(io_err) => {    
             match io_err {
                 StreamError::StreamNotFound(id) => {
-                    fuzz_input.generate_random_bytes_stream(id);
+                    fuzz_input.generate_init_stream(id);
                     match fuzz_input.get_io_fuzz_data(pc, io_addr, size as u64) {
                         Ok(fuzz_input_ptr) => { 
                             unsafe {data.copy_from(fuzz_input_ptr, size as usize);}
@@ -187,65 +195,85 @@ pub fn pre_io_write_smm_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : u
 
 fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
 {
-    if rw == 0 { // read
-        match fuzz_input.get_dram_fuzz_data(addr, size) {
-            Ok(data) => { 
-                unsafe { 
-                    // *DUMMY_MEMORY_HOST_PTR = data;
-                    // *out_addr = DUMMY_MEMORY_VIRT_ADDR;
-                }
-            },
-            Err(io_err) => {    
-                match io_err {
-                    StreamError::StreamNotFound(id) => {
-                        fuzz_input.generate_random_bytes_stream(id);
-                        match fuzz_input.get_dram_fuzz_data(addr,size) {
-                            Ok(data) => { 
-                                unsafe { 
-                                    // *DUMMY_MEMORY_HOST_PTR = data;
-                                    // *out_addr = DUMMY_MEMORY_VIRT_ADDR;
+    match rw { // read
+        0 => {
+            match fuzz_input.get_dram_fuzz_data(addr, size) {
+                Ok(data) => { 
+                    unsafe { 
+                        *DUMMY_MEMORY_HOST_PTR = data;
+                        *out_addr = DUMMY_MEMORY_VIRT_ADDR;
+                    }
+                },
+                Err(io_err) => {    
+                    match io_err {
+                        StreamError::StreamNotFound(id) => {
+                            fuzz_input.generate_init_stream(id);
+                            match fuzz_input.get_dram_fuzz_data(addr,size) {
+                                Ok(data) => { 
+                                    unsafe { 
+                                        *DUMMY_MEMORY_HOST_PTR = data;
+                                        *out_addr = DUMMY_MEMORY_VIRT_ADDR;
+                                    }
+                                },
+                                Err(io_err) => {    
+                                    error!("dram fuzz data generate error {:?}",io_err);
+                                    exit_elegantly();
                                 }
-                            },
-                            Err(io_err) => {    
-                                error!("dram fuzz data generate error {:?}",io_err);
-                                exit_elegantly();
+                            }
+                        },
+                        StreamError::StreamOutof(id) => {
+                            unsafe {
+                                NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
                             }
                         }
-                    },
-                    StreamError::StreamOutof(id) => {
-                        unsafe {
-                            NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+                        _ => {
+                            error!("dram fuzz data generate error {:?}",io_err);
+                            exit_elegantly();
                         }
-                    }
-                    _ => {
-                        error!("dram fuzz data generate error {:?}",io_err);
-                        exit_elegantly();
                     }
                 }
             }
-        }
-    }
-    else if rw == 1 {   // write
-        unsafe {
-            // *out_addr = DUMMY_MEMORY_VIRT_ADDR;
-            fuzz_input.set_dram_value(addr, size, &val.to_le_bytes());
-        }
-    }
-    else if rw == 2 {    // exch
+            info!("memread {:#x} {:#x} {:#x} {:#x}",pc,addr,size,unsafe{*DUMMY_MEMORY_HOST_PTR});
+        },
+        1 => {
+            unsafe {
+                *out_addr = DUMMY_MEMORY_VIRT_ADDR;
+                fuzz_input.set_dram_value(addr, size, &val.to_le_bytes());
+            }
+        },
+        2 => {
 
-    }
-    else if rw == 3 {    // vec ldr
+        },
+        3 => {
 
-    }
-    else if rw == 4 {    // vec str
+        },
+        4 => {
 
+        },
+        _ => {
+
+        },
     }
-    debug!("memread {:#x} {:#x} {:#x} {:#x}",pc,addr,size,rw);
+    
 
 }
 pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
 {
-    return;
+    unsafe {
+        if IN_FUZZ == false {
+            return;
+        }
+        if pc < CURRENT_MODULE_ADDR || pc > CURRENT_MODULE_END {
+            return;
+        }
+        if addr >= (HOB_ADDR + HOB_SIZE) || addr <= HOB_ADDR { // HOB accees, needs to fuzz
+            return;
+        }
+    }
+    if size > 16 {
+        error!("pre_memrw_common get size large than 16 it is {:?}", size);
+        exit_elegantly();
+    }
     pre_memrw_common(pc, addr, size, out_addr, rw, val, fuzz_input, cpu);
 }
 pub fn pre_memrw_smm_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
@@ -280,7 +308,7 @@ fn rdmsr_common(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fuzz_input : &
         Err(io_err) => {    
             match io_err {
                 StreamError::StreamNotFound(id) => {
-                    fuzz_input.generate_random_bytes_stream(id);
+                    fuzz_input.generate_init_stream(id);
                     match fuzz_input.get_msr_fuzz_data(8) {
                         Ok((fuzz_input_ptr)) => { 
                             unsafe { 
@@ -375,7 +403,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_SMI_SELECT_FUZZ_DATA => {
-            match fuzz_input.get_smi_select_info() {
+            match fuzz_input.get_smi_select_info_fuzz_data() {
                 Ok((fuzz_input_ptr, mut len)) => { 
                     unsafe { SMI_SELECT_BUFFER_HOST_PTR.copy_from(fuzz_input_ptr, len); }
                     ret = len as u64;
@@ -383,8 +411,8 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 Err(io_err) => {    
                     match io_err {
                         StreamError::StreamNotFound(id) => {
-                            fuzz_input.generate_random_bytes_stream(id);
-                            match fuzz_input.get_smi_select_info() {
+                            fuzz_input.generate_init_stream(id);
+                            match fuzz_input.get_smi_select_info_fuzz_data() {
                                 Ok((fuzz_input_ptr, mut len)) => { 
                                     unsafe { SMI_SELECT_BUFFER_HOST_PTR.copy_from(fuzz_input_ptr, len); }
                                     ret = len as u64;
@@ -405,7 +433,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_COMMBUF_FUZZ_DATA => {
             unsafe {
-                match fuzz_input.get_commbuf_data(arg1, arg2) {
+                match fuzz_input.get_commbuf_fuzz_data(arg1, arg2) {
                     Ok((fuzz_input_ptr, mut len)) => { 
                         unsafe { COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, len); }
                         ret = len as u64;
@@ -413,8 +441,8 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                     Err(io_err) => {    
                         match io_err {
                             StreamError::StreamNotFound(id) => {
-                                fuzz_input.generate_random_bytes_stream(id);
-                                match fuzz_input.get_commbuf_data(arg1, arg2) {
+                                fuzz_input.generate_init_stream(id);
+                                match fuzz_input.get_commbuf_fuzz_data(arg1, arg2) {
                                     Ok((fuzz_input_ptr, mut len)) => { 
                                         unsafe { COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, len); }
                                         ret = len as u64;
@@ -434,6 +462,62 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 }
             }
         },
+        LIBAFL_QEMU_COMMAND_SMM_GET_PCD => {
+            unsafe {
+                match fuzz_input.get_pcd_fuzz_data(arg1) {
+                    Ok((fuzz_input_ptr)) => { 
+                        ret = match arg1 {
+                            1 => *fuzz_input_ptr as u64,
+                            _ => 0,
+                        };
+                    },
+                    Err(io_err) => {    
+                        match io_err {
+                            StreamError::StreamNotFound(id) => {
+                                fuzz_input.generate_init_stream(id);
+                                match fuzz_input.get_pcd_fuzz_data(arg1) {
+                                    Ok((fuzz_input_ptr)) => { 
+                                        ret = match arg1 {
+                                            1 => *fuzz_input_ptr as u64,
+                                            _ => 0,
+                                        };
+                                    },
+                                    Err(io_err) => {    
+                                        match io_err {
+                                            StreamError::StreamOutof(id) => {
+                                                unsafe {
+                                                    NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+                                                }
+                                            },
+                                            _ => {
+                                                error!("pcd data generate error {:?}",io_err);
+                                                exit_elegantly();
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            StreamError::StreamOutof(id) => {
+                                unsafe {
+                                    NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+                                }
+                            },
+                            _ => {
+                                error!("pcd data generate error {:?}",io_err);
+                                exit_elegantly();
+                            },
+                        }
+                    }
+                }
+            }
+        },
+        LIBAFL_QEMU_COMMAND_SMM_REPORT_HOB_MEM => {
+            unsafe {
+                HOB_ADDR = arg1;
+                HOB_SIZE = arg2;
+            }
+            info!("HOB addr {:#x} size {:#x}",arg1, arg2);
+        }
         _ => { 
             error!("backdoor wrong cmd {:#x}",cmd); 
             exit_elegantly()
@@ -442,6 +526,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
     cpu.write_reg(Regs::Rax,ret).unwrap();
 }
 
+static mut NUM_TIMEOUT_BBL : u64 = 0xffffffffff;
 pub fn set_num_timeout_bbl(bbl : u64) {
     unsafe {
         NUM_TIMEOUT_BBL = bbl;

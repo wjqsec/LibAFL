@@ -87,15 +87,14 @@ fn main() {
 
     let mut snapshot = SnapshotKind::None;
     unsafe {
-        let exit_reason = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),10000000,false, false);
-        if let Ok(qemu_exit_reason) = exit_reason {
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),10000000,false, false);
+        if let Ok(qemu_exit_reason) = qemu_exit_reason {
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
-                let cmd : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
-                let arg1 : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
                 if cmd == LIBAFL_QEMU_COMMAND_END {  // sync exit
-                    if arg1 == LIBAFL_QEMU_END_SMM_INIT_START {
+                    if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_START {
+                        set_current_module(arg1, arg2);
                         snapshot = SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
-                    } else if arg1 == LIBAFL_QEMU_END_SMM_MODULE_START {
+                    } else if sync_exit_reason == LIBAFL_QEMU_END_SMM_MODULE_START {
                         snapshot = SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::from_qemu(qemu));
                     }   
                 }
@@ -189,55 +188,4 @@ fn main() {
         rdmsr_smm_fuzz_phase(in_ecx, out_eax, out_edx, fuzz_input);
     })));
     smm_phase_fuzz(&mut emulator ,&start_smm_module);
-    
-    
-   
-    // let cpuid_id = emulator.modules_mut().cpuid(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_eax: u32, out_eax: *mut u32,out_ebx: *mut u32, out_ecx: *mut u32, out_edx: *mut u32| {
-    //     let pc : GuestReg = current_cpu.read_reg(Regs::Pc).unwrap();
-    //     cpuid_common(pc, in_eax,out_eax,out_ebx,out_ecx,out_edx);
-    // })));
-    // let rdmsr_id = emulator.modules_mut().rdmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32| {
-    //     let pc : GuestReg = current_cpu.read_reg(Regs::Pc).unwrap();
-    //     rdmsr_common(pc, in_ecx, out_eax, out_edx);
-    // })));
-    // let wrmsr_id = emulator.modules_mut().wrmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32| {
-    //     let pc : GuestReg = current_cpu.read_reg(Regs::Pc).unwrap();
-    //     wrmsr_common(pc, in_ecx, in_eax, in_edx);
-    // })));
- 
-
-    // let mut cmplogob = CmpLogObserver::new("cmplogob", true);
-    
-    // let mut aflcmplog_executor = StatefulQemuExecutor::new(
-    //     &mut emulator,
-    //     &mut harness,
-    //     tuple_list!(cmplogob),
-    //     &mut fuzzer,
-    //     &mut state,
-    //     &mut mgr,
-    //     timeout,
-    // )
-    // .expect("Failed to create QemuExecutor");
-
-    // let colorization_stage = ColorizationStage::new(&mut edges_observer);
-
-    // let aflpp_tracing_stage = TracingStage::new(
-    //     aflcmplog_executor
-    // );
-
-    // let rq_stage = MultiMutationalStage::new(AFLppRedQueen::with_cmplog_options(true, true));
-
-    // let cb = |_fuzzer: &mut _,
-    //               _executor: &mut _,
-    //               state: &mut StdState<_, CachedOnDiskCorpus<_>, _, _>,
-    //               _event_manager: &mut _|
-    //      -> Result<bool, Error> {
-    //         let testcase = state.current_testcase()?;
-    //         let res = testcase.scheduled_count() == 1; // let's try on the 2nd trial
-
-    //         Ok(res)
-    //     };
-
-    // let cmplog = IfStage::new(cb, tuple_list!(colorization_stage, aflpp_tracing_stage, rq_stage));
-    
 }

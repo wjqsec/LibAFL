@@ -102,20 +102,17 @@ pub fn init_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExi
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu = in_qemu.first_cpu().unwrap();
-        let exit_reason = qemu_run_once(in_qemu, snapshot, 50000000,false, true);
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, snapshot, 500000,false, true);
         let exit_code;
-        debug!("new run exit {:?}",exit_reason);
-        if let Ok(qemu_exit_reason) = exit_reason
+        debug!("new run exit {:?}",qemu_exit_reason);
+        if let Ok(qemu_exit_reason) = qemu_exit_reason
         {
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
-                let cmd : GuestReg = in_cpu.read_reg(Regs::Rax).unwrap();
-                let arg1 : GuestReg = in_cpu.read_reg(Regs::Rdi).unwrap();
-                let pc : GuestReg = in_cpu.read_reg(Regs::Rip).unwrap();
-                debug!("qemu_run_to_end sync exit {:#x} {:#x} {:#x}",cmd,arg1,pc);
+                debug!("qemu_run_to_end sync exit {:#x} {:#x} {:#x}",cmd,sync_exit_reason,pc);
                 if cmd == LIBAFL_QEMU_COMMAND_END {
-                    match arg1 {
+                    match sync_exit_reason {
                         LIBAFL_QEMU_END_CRASH => {
-                            exit_code = ExitKind::Crash;
+                            exit_code = ExitKind::Ok; // init phase does not have crash we assume
                         },
                         LIBAFL_QEMU_END_SMM_INIT_END => {
                             unsafe {
@@ -127,10 +124,13 @@ pub fn init_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExi
                             }
                             exit_code = ExitKind::Ok;
                         },
+                        LIBAFL_QEMU_END_SMM_INIT_UNSUPPORT => {
+                            exit_code = ExitKind::Ok;
+                        },
                         _ => {
                             exit_elegantly();
                             exit_code = ExitKind::Ok;
-                        }
+                        },
                     }
                 }
                 else {
@@ -238,17 +238,15 @@ pub fn init_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExi
     loop {
         if unsafe { !SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() } {
             let exit_snapshot = unsafe { Box::from_raw(SMM_INIT_FUZZ_EXIT_SNAPSHOT) };
-            let mut exit_reason = qemu_run_once(qemu, &exit_snapshot,800000000, true, false);
-            let cmd : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
-            let arg1 : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
-            let pc : GuestReg = cpu.read_reg(Regs::Rip).unwrap();
-            if let Ok(ref qemu_exit_reason) = exit_reason {
+            let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &exit_snapshot,800000000, true, false);
+            if let Ok(ref qemu_exit_reason) = qemu_exit_reason {
                 if let QemuExitReason::SyncExit = qemu_exit_reason {
                     if cmd == LIBAFL_QEMU_COMMAND_END {
-                        if arg1 == LIBAFL_QEMU_END_SMM_INIT_START {
+                        if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_START {
+                            set_current_module(arg1, arg2);
                             return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
                         }
-                        else if arg1 == LIBAFL_QEMU_END_SMM_MODULE_START {
+                        else if sync_exit_reason == LIBAFL_QEMU_END_SMM_MODULE_START {
                             return SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::from_qemu(qemu));
                         }
                     }
@@ -262,7 +260,7 @@ pub fn init_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExi
                 SMM_INIT_FUZZ_EXIT_SNAPSHOT = ptr::null_mut();
             }
             snapshot.restore_fuzz_snapshot(qemu, true);
-            warn!("smm init found {:?} {pc:#x} {cmd:#x} {arg1:#x}",exit_reason);
+            warn!("smm init found {:?} {pc:#x} {cmd:#x} {sync_exit_reason:#x}",qemu_exit_reason);
             
         }
         fuzzer

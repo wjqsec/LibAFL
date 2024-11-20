@@ -73,13 +73,11 @@ fn gen_init_random_seed(dir : &PathBuf) {
 
 fn run_to_smm_fuzz_point(qemu : Qemu, cpu : CPU, start_snapshot : &FuzzerSnapshot) -> FuzzerSnapshot {
     // run to the start cause we are now at the start of the smm fuzz driver
-    let mut exit_reason = qemu_run_once(qemu, start_snapshot,10000000000, true, false);
-    let cmd : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
-    let arg1 : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
-    if let Ok(ref qemu_exit_reason) = exit_reason {
+    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, start_snapshot,10000000000, true, false);
+    if let Ok(ref qemu_exit_reason) = qemu_exit_reason {
         if let QemuExitReason::SyncExit = qemu_exit_reason {
             if cmd == LIBAFL_QEMU_COMMAND_END {
-                if arg1 == LIBAFL_QEMU_END_SMM_FUZZ_START {
+                if sync_exit_reason == LIBAFL_QEMU_END_SMM_FUZZ_START {
                     start_snapshot.delete(qemu);
                     return FuzzerSnapshot::from_qemu(qemu);
                 }
@@ -121,18 +119,15 @@ pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExit
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu = in_qemu.first_cpu().unwrap();
-        let exit_reason = qemu_run_once(in_qemu, &smi_fuzz_snapshot, 50000000,false, true);
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &smi_fuzz_snapshot, 50000000,false, true);
         let exit_code;
-        debug!("new run exit {:?}",exit_reason);
-        if let Ok(qemu_exit_reason) = exit_reason
+        debug!("new run exit {:?}",qemu_exit_reason);
+        if let Ok(qemu_exit_reason) = qemu_exit_reason
         {
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
-                let cmd : GuestReg = in_cpu.read_reg(Regs::Rax).unwrap();
-                let arg1 : GuestReg = in_cpu.read_reg(Regs::Rdi).unwrap();
-                let pc : GuestReg = in_cpu.read_reg(Regs::Rip).unwrap();
-                debug!("qemu_run_to_end sync exit {:#x} {:#x} {:#x}",cmd,arg1,pc);
+                debug!("qemu_run_to_end sync exit {:#x} {:#x} {:#x}",cmd,sync_exit_reason,pc);
                 if cmd == LIBAFL_QEMU_COMMAND_END {
-                    match arg1 {
+                    match sync_exit_reason {
                         LIBAFL_QEMU_END_CRASH => {
                             unsafe {CRASH_TIMES += 1;}
                             exit_code = ExitKind::Crash;
@@ -142,7 +137,7 @@ pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExit
                             exit_code = ExitKind::Ok;
                         },
                         _ => {
-                            error!("exit error with sync exit arg {:#x}",arg1);
+                            error!("exit error with sync exit arg {:#x}",sync_exit_reason);
                             exit_elegantly();
                             exit_code = ExitKind::Ok;
                         }
