@@ -13,6 +13,8 @@ use crate::smm_fuzz_qemu_cmds::*;
 
 pub static mut IN_FUZZ : bool = false;
 
+pub static mut IN_SMI : bool = false;
+
 pub static mut GLOB_INPUT : *mut StreamInputs = std::ptr::null_mut() as *mut StreamInputs;
 
 static mut NEXT_EXIT : Option<SmmQemuExit> = None;  // use this variblae to prevent memory leak
@@ -31,15 +33,10 @@ static mut COMMBUF_HOST_PTR : *mut u8 = 0 as *mut u8;
 static mut HOB_ADDR : u64 = 0;
 static mut HOB_SIZE : u64 = 0;
 
-static mut DEBUG_TRACE : bool = false;
-pub fn start_debug() {
+static mut NUM_BBL_DEBUG_TRACE : u64 = 0;
+pub fn start_debug_trace(num_bbl : u64) {
     unsafe {
-        DEBUG_TRACE = true;
-    }
-}
-pub fn stop_debug() {
-    unsafe {
-        DEBUG_TRACE = false;
+        NUM_BBL_DEBUG_TRACE = num_bbl;
     }
 }
 
@@ -146,7 +143,7 @@ pub fn post_io_read_smm_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : u
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
     let addr = base + offset;
     unsafe {
-        if IN_FUZZ == false{
+        if IN_FUZZ == false || IN_SMI == false {
             return;
         }
         if io_err == 0 && addr != 0xb2 && addr != 0xb3 {
@@ -186,7 +183,7 @@ pub fn pre_io_write_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : 
 pub fn pre_io_write_smm_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool, cpu : CPU)
 {
     unsafe {
-        if IN_FUZZ == false {
+        if IN_FUZZ == false || IN_SMI == false {
             return;
         }
     }
@@ -224,6 +221,8 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
                         StreamError::StreamOutof(id) => {
                             unsafe {
                                 NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+                                *DUMMY_MEMORY_HOST_PTR = 0x12345678deadbeef;
+                                *out_addr = DUMMY_MEMORY_VIRT_ADDR;
                             }
                         }
                         _ => {
@@ -233,7 +232,6 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
                     }
                 }
             }
-            info!("memread {:#x} {:#x} {:#x} {:#x}",pc,addr,size,unsafe{*DUMMY_MEMORY_HOST_PTR});
         },
         1 => {
             unsafe {
@@ -263,10 +261,13 @@ pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , o
         if IN_FUZZ == false {
             return;
         }
-        if pc < CURRENT_MODULE_ADDR || pc > CURRENT_MODULE_END {
+        if pc < CURRENT_MODULE_ADDR || pc >= CURRENT_MODULE_END {
             return;
         }
-        if addr >= (HOB_ADDR + HOB_SIZE) || addr <= HOB_ADDR { // HOB accees, needs to fuzz
+        if  addr < HOB_ADDR  || addr >= (HOB_ADDR + HOB_SIZE) { // HOB accees, needs to fuzz
+            return;
+        }
+        if addr >= HOB_ADDR + 2 && addr < HOB_ADDR + 8 { // HOB length not to mutate
             return;
         }
     }
@@ -279,14 +280,14 @@ pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , o
 pub fn pre_memrw_smm_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
 {
     unsafe {
-        if IN_FUZZ == false {
+        if IN_FUZZ == false || IN_SMI == false {
             return;
         }
     }
-    if addr >= 0x7000000 && addr <= 0x8000000 { // inside sram
+    if addr >= 0x7000000 && addr < 0x8000000 { // inside sram
         return;
     }
-    if addr >= unsafe {( COMMBUF_ADDR - 25 )} &&  addr <= unsafe {COMMBUF_ADDR + COMMBUF_SIZE} {  //outside comm buffer
+    if addr >= unsafe {COMMBUF_ADDR} &&  addr <= unsafe {COMMBUF_ADDR + COMMBUF_SIZE} {  //outside comm buffer
         return;
     }
     if size > 16 {
@@ -295,6 +296,7 @@ pub fn pre_memrw_smm_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , ou
     }
     pre_memrw_common(pc, addr, size, out_addr, rw, val, fuzz_input, cpu);
 }
+
 
 fn rdmsr_common(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fuzz_input : &mut StreamInputs)
 {
@@ -338,7 +340,7 @@ fn rdmsr_common(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fuzz_input : &
     unsafe {
         let eax_info = *out_eax;
         let edx_info = *out_edx;
-        debug!("rdmsr {in_ecx:#x} {eax_info:#x} {edx_info:#x}");
+        info!("rdmsr {in_ecx:#x} {eax_info:#x} {edx_info:#x}");
     }
 }
 pub fn rdmsr_init_fuzz_phase(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fuzz_input : &mut StreamInputs) 
@@ -352,7 +354,7 @@ pub fn rdmsr_init_fuzz_phase(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,f
 pub fn rdmsr_smm_fuzz_phase(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fuzz_input : &mut StreamInputs) 
 {
     unsafe {
-        if IN_FUZZ == false {
+        if IN_FUZZ == false || IN_SMI == false {
             return;
         }
     }
@@ -462,7 +464,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 }
             }
         },
-        LIBAFL_QEMU_COMMAND_SMM_GET_PCD => {
+        LIBAFL_QEMU_COMMAND_SMM_GET_PCD_FUZZ_DATA => {
             unsafe {
                 match fuzz_input.get_pcd_fuzz_data(arg1) {
                     Ok((fuzz_input_ptr)) => { 
@@ -517,7 +519,17 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 HOB_SIZE = arg2;
             }
             info!("HOB addr {:#x} size {:#x}",arg1, arg2);
-        }
+        },
+        LIBAFL_QEMU_COMMAND_SMM_SMI_ENTER => {
+            unsafe {
+                IN_SMI = true;
+            }
+        },
+        LIBAFL_QEMU_COMMAND_SMM_SMI_EXIT => {
+            unsafe {
+                IN_SMI = false;
+            }
+        },
         _ => { 
             error!("backdoor wrong cmd {:#x}",cmd); 
             exit_elegantly()
@@ -532,9 +544,9 @@ pub fn set_num_timeout_bbl(bbl : u64) {
         NUM_TIMEOUT_BBL = bbl;
     }
 }
-pub fn bbl_common(cpu : CPU) {
 
-    
+
+pub fn bbl_common(cpu : CPU) {
     #[cfg(feature = "debug_trace")]
     {
         let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
@@ -545,13 +557,13 @@ pub fn bbl_common(cpu : CPU) {
         let rsi : GuestReg = cpu.read_reg(Regs::Rsi).unwrap();
         let rdi : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
         unsafe {
-            if DEBUG_TRACE {
+            if NUM_BBL_DEBUG_TRACE > 0 {
                 info!("bbl-> {} pc:{pc:#x} rax:{rax:#x} rbx:{rbx:#x} rcx:{rcx:#x} rdx:{rdx:#x} rsi:{rsi:#x} rdi:{rdi:#x}",get_exec_count());
+                NUM_BBL_DEBUG_TRACE -= 1;
             }  
         }
+        
     }
-    
-
     unsafe {
         match NEXT_EXIT {
             Some(SmmQemuExit::StreamNotFound) => {
@@ -563,9 +575,8 @@ pub fn bbl_common(cpu : CPU) {
                 cpu.exit_stream_outof();
             }
             _ => {
-
             }
-        }
+        } 
     }
 
     if get_exec_count() > unsafe { NUM_TIMEOUT_BBL } {

@@ -1,12 +1,13 @@
 use core::{borrow::{Borrow, BorrowMut}, ops::DerefMut};
 
 use alloc::{borrow::Cow, string::String};
-use crate::{corpus::Corpus, inputs::HasMutatorBytes, prelude::HasCorpus};
+use crate::{corpus::Corpus, inputs::{HasMutatorBytes, HasTargetBytes}, prelude::{minimizer, HasCorpus}};
 use libafl_bolts::{
     impl_serdeany,
     tuples::{Handle, Handled, MatchNameRef},
     Named,
 };
+use std::cmp::min;
 use serde::{Deserialize, Serialize};
 use crate::prelude::HasCurrentTestcase;
 use crate::{
@@ -55,13 +56,18 @@ where
         let observer = observers.get(&self.observer_handle).unwrap();
         for (id, tmp_generated, used, input, limit) in observer.get_newstream().into_iter() {
             if tmp_generated {
-                testcase.input_mut().as_mut().unwrap().add_part(id, BytesInput::new(input[..used].to_vec()), limit);
+                let used_len = min(input.len(), used);
+                testcase.input_mut().as_mut().unwrap().add_part(id, BytesInput::new(input[..used_len].to_vec()), limit);
             } else {
                 if used == 0 {
                     testcase.input_mut().as_mut().unwrap().remove_part(&id);
                 } else {
-                    for (_, input) in testcase.input_mut().as_mut().unwrap().parts_by_name_mut(&id) {
-                        input.resize(used, 0);
+                    for (_, corpus_input) in testcase.input_mut().as_mut().unwrap().parts_by_name_mut(&id) {
+                        let old_len = corpus_input.target_bytes().len();
+                        if old_len != used {
+                            corpus_input.resize(used, 0);
+                        }
+                        
                     }
                 }
             }

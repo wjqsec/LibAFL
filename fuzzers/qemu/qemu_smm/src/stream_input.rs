@@ -111,6 +111,7 @@ pub struct RawStreamInput {
 impl RawStreamInput {
     pub fn get_input_len_ptr(&mut self, len : usize) -> Option<*const u8> {
         if self.cursor + len > self.len {
+            self.cursor += len;  // we used more fuzz data, tell the fuzzer
             return None;
         }
         let ret = unsafe { self.input.add(self.cursor as usize) };

@@ -3,7 +3,7 @@ use std::{cell::UnsafeCell, cmp::max};
 use hashbrown::{hash_map::Entry, HashMap};
 use libafl::{inputs::UsesInput, HasMetadata};
 use libafl_qemu_sys::GuestAddr;
-use crate::qemu::HookId;
+use crate::{qemu::HookId, BlockHookId};
 #[cfg(emulation_mode = "systemmode")]
 use libafl_qemu_sys::GuestPhysAddr;
 pub use libafl_targets::{
@@ -169,32 +169,32 @@ where
             ET: EmulatorModuleTuple<S>, 
     {
         if self.use_hitcounts {
-            // emulator_modules.edges(
-            //     Hook::Function(gen_unique_edge_ids::<ET, S>),
-            //     Hook::Raw(trace_edge_hitcount),
-            // );
-            let hook_id =
-                emulator_modules.edges(Hook::Function(gen_unique_edge_ids::<ET, S>), Hook::Empty);
-            unsafe {
-                libafl_qemu_sys::libafl_qemu_edge_hook_set_jit(
-                    hook_id.0,
-                    Some(libafl_qemu_sys::libafl_jit_trace_edge_hitcount),
-                );
-            }
+            let hook_id = emulator_modules.edges(
+                Hook::Function(gen_unique_edge_ids::<ET, S>),
+                Hook::Raw(trace_edge_hitcount),
+            );
+            // let hook_id =
+            //     emulator_modules.edges(Hook::Function(gen_unique_edge_ids::<ET, S>), Hook::Empty);
+            // unsafe {
+            //     libafl_qemu_sys::libafl_qemu_edge_hook_set_jit(
+            //         hook_id.0,
+            //         Some(libafl_qemu_sys::libafl_jit_trace_edge_hitcount),
+            //     );
+            // }
             self.hook_id = Some(hook_id);
         } else {
-            // emulator_modules.edges(
-            //     Hook::Function(gen_unique_edge_ids::<ET, S>),
-            //     Hook::Raw(trace_edge_single),
-            // );
-            let hook_id =
-                emulator_modules.edges(Hook::Function(gen_unique_edge_ids::<ET, S>), Hook::Empty);
-            unsafe {
-                libafl_qemu_sys::libafl_qemu_edge_hook_set_jit(
-                    hook_id.0,
-                    Some(libafl_qemu_sys::libafl_jit_trace_edge_single),
-                );
-            }
+            let hook_id = emulator_modules.edges(
+                Hook::Function(gen_unique_edge_ids::<ET, S>),
+                Hook::Raw(trace_edge_single),
+            );
+            // let hook_id =
+            //     emulator_modules.edges(Hook::Function(gen_unique_edge_ids::<ET, S>), Hook::Empty);
+            // unsafe {
+            //     libafl_qemu_sys::libafl_qemu_edge_hook_set_jit(
+            //         hook_id.0,
+            //         Some(libafl_qemu_sys::libafl_jit_trace_edge_single),
+            //     );
+            // }
             self.hook_id = Some(hook_id);
         }
     }
@@ -360,6 +360,7 @@ pub struct EdgeCoverageClassicModule {
     address_filter: QemuInstrumentationAddressRangeFilter,
     use_hitcounts: bool,
     use_jit: bool,
+    hook_id : Option<BlockHookId>,
 }
 
 #[cfg(emulation_mode = "systemmode")]
@@ -369,6 +370,7 @@ pub struct EdgeCoverageClassicModule {
     paging_filter: QemuInstrumentationPagingFilter,
     use_hitcounts: bool,
     use_jit: bool,
+    hook_id : Option<BlockHookId>,
 }
 
 #[cfg(emulation_mode = "usermode")]
@@ -379,6 +381,7 @@ impl EdgeCoverageClassicModule {
             address_filter,
             use_hitcounts: true,
             use_jit,
+            hook_id : None,
         }
     }
 
@@ -391,6 +394,7 @@ impl EdgeCoverageClassicModule {
             address_filter,
             use_hitcounts: false,
             use_jit,
+            hook_id : None,
         }
     }
 
@@ -413,6 +417,7 @@ impl EdgeCoverageClassicModule {
             paging_filter,
             use_hitcounts: true,
             use_jit,
+            hook_id : None,
         }
     }
 
@@ -427,6 +432,7 @@ impl EdgeCoverageClassicModule {
             paging_filter,
             use_hitcounts: false,
             use_jit,
+            hook_id : None,
         }
     }
 
@@ -481,55 +487,82 @@ where
     S: Unpin + UsesInput,
 {
     const HOOKS_DO_SIDE_EFFECTS: bool = false;
-
-    fn first_exec<ET>(&mut self, emulator_modules: &mut EmulatorModules<ET, S>)
-    where
-        ET: EmulatorModuleTuple<S>,
-    {
-        if self.use_hitcounts {
-            if self.use_jit {
-                let hook_id = emulator_modules.blocks(
-                    Hook::Function(gen_hashed_block_ids::<ET, S>),
-                    Hook::Empty,
-                    Hook::Empty,
-                );
-
-                unsafe {
-                    libafl_qemu_sys::libafl_qemu_block_hook_set_jit(
-                        hook_id.0,
-                        Some(libafl_qemu_sys::libafl_jit_trace_block_hitcount),
-                    );
-                }
-            } else {
-                emulator_modules.blocks(
-                    Hook::Function(gen_hashed_block_ids::<ET, S>),
-                    Hook::Empty,
-                    Hook::Raw(trace_block_transition_hitcount),
-                );
-            }
-        } else {
-            if self.use_jit {
-                let hook_id = emulator_modules.blocks(
-                    Hook::Function(gen_hashed_block_ids::<ET, S>),
-                    Hook::Empty,
-                    Hook::Empty,
-                );
-
-                unsafe {
-                    libafl_qemu_sys::libafl_qemu_block_hook_set_jit(
-                        hook_id.0,
-                        Some(libafl_qemu_sys::libafl_jit_trace_block_single),
-                    );
-                }
-            } else {
-                emulator_modules.blocks(
-                    Hook::Function(gen_hashed_block_ids::<ET, S>),
-                    Hook::Empty,
-                    Hook::Raw(trace_block_transition_single),
-                );
-            }
+    fn pre_exec<ET>(&mut self, emulator_modules: &mut EmulatorModules<ET, S>, _input: &<S as UsesInput>::Input)
+        where
+            ET: EmulatorModuleTuple<S>, {
+        let hook_id = emulator_modules.blocks(
+            Hook::Function(gen_hashed_block_ids::<ET, S>),
+            Hook::Empty,
+            Hook::Raw(trace_block_transition_hitcount),
+        );
+        unsafe {
+            PREV_LOC.with(|prev_loc| {
+                *prev_loc.get() = 0;
+            });
+            MAX_EDGES_FOUND = EDGES_MAP_SIZE_IN_USE;
         }
+        self.hook_id = Some(hook_id);
     }
+    fn post_exec<OT, ET>(
+            &mut self,
+            _emulator_modules: &mut EmulatorModules<ET, S>,
+            _input: &<S as UsesInput>::Input,
+            _observers: &mut OT,
+            _exit_kind: &mut libafl::prelude::ExitKind,
+        ) where
+            OT: libafl::prelude::ObserversTuple<S>,
+            ET: EmulatorModuleTuple<S>, {
+        self.hook_id.unwrap().remove(false);
+        
+    }
+    // fn first_exec<ET>(&mut self, emulator_modules: &mut EmulatorModules<ET, S>)
+    // where
+    //     ET: EmulatorModuleTuple<S>,
+    // {
+    //     if self.use_hitcounts {
+    //         if self.use_jit {
+    //             let hook_id = emulator_modules.blocks(
+    //                 Hook::Function(gen_hashed_block_ids::<ET, S>),
+    //                 Hook::Empty,
+    //                 Hook::Empty,
+    //             );
+
+    //             unsafe {
+    //                 libafl_qemu_sys::libafl_qemu_block_hook_set_jit(
+    //                     hook_id.0,
+    //                     Some(libafl_qemu_sys::libafl_jit_trace_block_hitcount),
+    //                 );
+    //             }
+    //         } else {
+    //             emulator_modules.blocks(
+    //                 Hook::Function(gen_hashed_block_ids::<ET, S>),
+    //                 Hook::Empty,
+    //                 Hook::Raw(trace_block_transition_hitcount),
+    //             );
+    //         }
+    //     } else {
+    //         if self.use_jit {
+    //             let hook_id = emulator_modules.blocks(
+    //                 Hook::Function(gen_hashed_block_ids::<ET, S>),
+    //                 Hook::Empty,
+    //                 Hook::Empty,
+    //             );
+
+    //             unsafe {
+    //                 libafl_qemu_sys::libafl_qemu_block_hook_set_jit(
+    //                     hook_id.0,
+    //                     Some(libafl_qemu_sys::libafl_jit_trace_block_single),
+    //                 );
+    //             }
+    //         } else {
+    //             emulator_modules.blocks(
+    //                 Hook::Function(gen_hashed_block_ids::<ET, S>),
+    //                 Hook::Empty,
+    //                 Hook::Raw(trace_block_transition_single),
+    //             );
+    //         }
+    //     }
+    // }
 }
 
 thread_local!(static PREV_LOC : UnsafeCell<u64> = const { UnsafeCell::new(0) });
@@ -679,15 +712,15 @@ where
     }
     // GuestAddress is u32 for 32 bit guests
     #[allow(clippy::unnecessary_cast)]
-    Some(hash_me(pc as u64))
+    Some(hash_me(pc as u64) & (EDGES_MAP_SIZE_IN_USE as u64 - 1))
 }
 
 pub extern "C" fn trace_block_transition_hitcount(_: *const (), id: u64) {
     unsafe {
         PREV_LOC.with(|prev_loc| {
-            let x = ((*prev_loc.get() ^ id) as usize) & (EDGES_MAP_SIZE_MAX - 1);
-            let entry = EDGES_MAP_PTR.add(x);
-            *entry = (*entry).wrapping_add(1);
+            let x = (*prev_loc.get() ^ id) as usize;
+            let ptr = EDGES_MAP_PTR.add(x as usize);
+            *ptr = (*ptr).wrapping_add(1);
             *prev_loc.get() = id.overflowing_shr(1).0;
         });
     }
@@ -696,9 +729,9 @@ pub extern "C" fn trace_block_transition_hitcount(_: *const (), id: u64) {
 pub extern "C" fn trace_block_transition_single(_: *const (), id: u64) {
     unsafe {
         PREV_LOC.with(|prev_loc| {
-            let x = ((*prev_loc.get() ^ id) as usize) & (EDGES_MAP_SIZE_MAX - 1);
-            let entry = EDGES_MAP_PTR.add(x);
-            *entry = 1;
+            let x = (*prev_loc.get() ^ id) as usize;
+            let ptr = EDGES_MAP_PTR.add(x as usize);
+            *ptr = 1;
             *prev_loc.get() = id.overflowing_shr(1).0;
         });
     }
