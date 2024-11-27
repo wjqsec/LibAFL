@@ -1,5 +1,6 @@
 use libafl::inputs::multi::MultipartInput;
 use libafl::inputs::BytesInput;
+use std::cmp::min;
 use std::collections::BTreeMap;
 use std::error;
 use std::error::Error;
@@ -111,7 +112,6 @@ pub struct RawStreamInput {
 impl RawStreamInput {
     pub fn get_input_len_ptr(&mut self, len : usize) -> Option<*const u8> {
         if self.cursor + len > self.len {
-            self.cursor += len;  // we used more fuzz data, tell the fuzzer
             return None;
         }
         let ret = unsafe { self.input.add(self.cursor as usize) };
@@ -129,11 +129,17 @@ impl RawStreamInput {
     pub fn get_used(&self) -> usize {
         self.cursor
     }
+    pub fn get_unused(&self) -> usize {
+        if self.cursor >= self.len {
+            return 0;
+        }
+        return self.len - self.cursor;
+    }
 }
 
 pub enum StreamInput {
-    NewStream(StreamInfo, Vec<u8>, RawStreamInput),
-    OldStream(RawStreamInput),
+    NewStream(StreamInfo, Vec<u8>, RawStreamInput, Vec<u8>),
+    OldStream(RawStreamInput, Vec<u8>),
 }
 
 
@@ -141,62 +147,88 @@ pub enum StreamInput {
 
 impl StreamInput{
     pub fn from_fuzz(input : *const u8, len : usize) -> Self {
-        StreamInput::OldStream(RawStreamInput {
-            cursor : 0,
-            input,
-            len,
-        })
+        StreamInput::OldStream(
+            RawStreamInput {
+                cursor : 0,
+                input,
+                len,
+            },
+            Vec::new(),
+        )
     }
     pub fn from_new(info : StreamInfo, data : Vec<u8>) -> Self {
         let raw_ptr = data.as_ptr();
         let len = data.len();
-        StreamInput::NewStream(info, data, RawStreamInput {
-            cursor : 0,
-            input : raw_ptr,
-            len : len,
-        })
+        StreamInput::NewStream(
+            info, 
+            data, 
+            RawStreamInput {
+                cursor : 0,
+                input : raw_ptr,
+                len : len,
+            },
+            Vec::new(),
+        )
     }
     pub fn get_id(&self) -> Option<u128> {
         match self {
-            StreamInput::NewStream(info, _, _) => Some(info.get_id()),
-            StreamInput::OldStream(_) => None,
+            StreamInput::NewStream(info, _, _,_) => Some(info.get_id()),
+            StreamInput::OldStream(_,_) => None,
         }
     }
     pub fn is_new_stream(&self) -> bool {
         match self {
-            StreamInput::NewStream(_, _, _) => true,
-            StreamInput::OldStream(_) => false,
+            StreamInput::NewStream(_, _, _,_) => true,
+            StreamInput::OldStream(_,_) => false,
         }
     }
     pub fn get_limit(&self) -> Option<usize> {
         match self {
-            StreamInput::NewStream(info, _, _) => Some(info.get_max_len()),
-            StreamInput::OldStream(_) => None,
+            StreamInput::NewStream(info, _, _,_) => Some(info.get_max_len()),
+            StreamInput::OldStream(_,_) => None,
         }
     }
 
     pub fn get_input_len_ptr(&mut self, len : usize) -> Option<*const u8> {
         match self {
-            StreamInput::NewStream(_, _, stream) => stream.get_input_len_ptr(len),
-            StreamInput::OldStream(stream) => stream.get_input_len_ptr(len),
+            StreamInput::NewStream(_, _, stream,_) => stream.get_input_len_ptr(len),
+            StreamInput::OldStream(stream,_) => stream.get_input_len_ptr(len),
         }
     }
     pub fn get_input_all_ptr(&mut self) -> Option<(*const u8, usize)> {
         match self {
-            StreamInput::NewStream(_, _, stream) => stream.get_input_all_ptr(),
-            StreamInput::OldStream(stream) => stream.get_input_all_ptr(),
+            StreamInput::NewStream(_, _, stream,_) => stream.get_input_all_ptr(),
+            StreamInput::OldStream(stream,_) => stream.get_input_all_ptr(),
+        }
+    }
+    pub fn get_unused(&self) -> usize {
+        match self {
+            StreamInput::NewStream(_, _, stream,_) => stream.get_unused(),
+            StreamInput::OldStream(stream,_) => stream.get_unused(),
         }
     }
     pub fn get_used(&self) -> usize {
         match self {
-            StreamInput::NewStream(_, _, stream) => stream.get_used(),
-            StreamInput::OldStream(stream) => stream.get_used(),
+            StreamInput::NewStream(_, _, stream,_) => stream.get_used(),
+            StreamInput::OldStream(stream,_) => stream.get_used(),
         }
     }
-    pub fn get_stream_data(&self) -> Vec<u8> {
+    pub fn get_new_stream(&self) -> Option<Vec<u8>> {
         match self {
-            StreamInput::NewStream(_, data , _) => data.clone(),
-            StreamInput::OldStream(_) => Vec::new(),
+            StreamInput::NewStream(_, stream , _, _) => Some(stream.clone()),
+            StreamInput::OldStream(_,_) => None,
+        }
+    }
+    pub fn get_append_stream(&self) -> Option<Vec<u8>> {
+        match self {
+            StreamInput::NewStream(_, _ , _, append_stream) => Some(append_stream.clone()),
+            StreamInput::OldStream(_,append_stream) => Some(append_stream.clone()),
+        }
+    }
+    pub fn append_new_data(&mut self, new_data : &Vec<u8>) {
+        match self {
+            StreamInput::NewStream(_, _ , _,append_stream) => append_stream.extend(new_data),
+            StreamInput::OldStream(_,append_stream) => append_stream.extend(new_data),
         }
     }
 }
@@ -271,14 +303,23 @@ impl StreamInputs {
             },
         }
     }
-    pub fn get_commbuf_fuzz_data(&mut self, index : u64, times : u64) -> Result<(*const u8, usize), StreamError> {
+    pub fn get_commbuf_fuzz_data(&mut self, index : u64, times : u64) -> Result<(*const u8, usize, usize), StreamError> {
         let stream_info = StreamInfo::new_comm_buf_stream(index, times);
         match self.inputs.entry(stream_info.get_id()) {
             std::collections::btree_map::Entry::Occupied(mut entry) => {
-                if let Some((fuzz_input_ptr,len)) = entry.get_mut().get_input_all_ptr() {
-                    return Ok((fuzz_input_ptr,len));
-                }
-                else {
+                if let Some((claimed_len_ptr)) = entry.get_mut().get_input_len_ptr(8) { 
+                    let claimed_len = unsafe {*(claimed_len_ptr as *const u64)} as usize;
+                    let unused_len = entry.get().get_unused();
+                    if unused_len == 0 || claimed_len == 0 {
+                        return Err(StreamError::StreamNotFound(stream_info)); 
+                    }
+                    let actual_len = min(claimed_len, unused_len);
+                    if let Some((fuzz_input_ptr)) = entry.get_mut().get_input_len_ptr(actual_len) { 
+                        return Ok((fuzz_input_ptr, claimed_len, actual_len));
+                    } else {
+                        return Err(StreamError::StreamOutof(stream_info));
+                    }
+                } else {
                     return Err(StreamError::StreamOutof(stream_info));
                 }
             },
@@ -303,43 +344,63 @@ impl StreamInputs {
             },
         }
     }
-    pub fn get_dram_fuzz_data(&mut self, addr : u64, len : u64) -> Result<u64, StreamError> {
+    pub fn get_dram_fuzz_data(&mut self, addr : u64, len : u64, consistent : bool) -> Result<u64, StreamError> {
         if len > 8 {
             return Err(StreamError::LargeDatasize(len));
         }
         let stream_info = StreamInfo::new_dram_stream();
-        let mut ret : u64 = 0;
-        match self.sparse_memory.read_bytes(addr, len) {
-            Ok(data) => {
-                return Ok(data);
-            },
-            Err(err) => {
-                if let DramError::Uninit(uninit_addrs) = err {
-                    match self.inputs.entry(stream_info.get_id()) {
-                        std::collections::btree_map::Entry::Occupied(mut entry) => {
-                            if let Some(mut fuzz_input_ptr) = entry.get_mut().get_input_len_ptr(uninit_addrs.len()) {
-                                for uninit_addr in uninit_addrs {
-                                    self.sparse_memory.write_byte(uninit_addr, unsafe { fuzz_input_ptr.read() });
-                                    fuzz_input_ptr = unsafe { fuzz_input_ptr.add(1) };
+        if consistent {
+            match self.sparse_memory.read_bytes(addr, len) {
+                Ok(data) => {
+                    return Ok(data);
+                },
+                Err(err) => {
+                    if let DramError::Uninit(uninit_addrs) = err {
+                        match self.inputs.entry(stream_info.get_id()) {
+                            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                                if let Some(mut fuzz_input_ptr) = entry.get_mut().get_input_len_ptr(uninit_addrs.len()) {
+                                    for uninit_addr in uninit_addrs {
+                                        self.sparse_memory.write_byte(uninit_addr, unsafe { fuzz_input_ptr.read() });
+                                        fuzz_input_ptr = unsafe { fuzz_input_ptr.add(1) };
+                                    }
+                                    if let Ok(data) = self.sparse_memory.read_bytes(addr, len) {
+                                        return Ok(data);
+                                    } else {
+                                        return Err(StreamError::Unknown);
+                                    }
                                 }
-                                if let Ok(data) = self.sparse_memory.read_bytes(addr, len) {
-                                    return Ok(data);
-                                } else {
-                                    return Err(StreamError::Unknown);
+                                else {
+                                    return Err(StreamError::StreamOutof(stream_info));
                                 }
-                            }
-                            else {
-                                return Err(StreamError::StreamOutof(stream_info));
-                            }
-                        },
-                        std::collections::btree_map::Entry::Vacant(entry) => { 
-                            return Err(StreamError::StreamNotFound(stream_info));
-                        },
+                            },
+                            std::collections::btree_map::Entry::Vacant(entry) => { 
+                                return Err(StreamError::StreamNotFound(stream_info));
+                            },
+                        }
                     }
-                }
-                return Err(StreamError::Unknown);
-            },
+                    return Err(StreamError::Unknown);
+                },
+            }
+        } else {
+            match self.inputs.entry(stream_info.get_id()) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    if let Some(fuzz_input_ptr) = entry.get_mut().get_input_len_ptr(len as usize) {
+                        let mut data : u64 = 0;
+                        for i in 0..(len as usize) {
+                            data = (data << 8) | unsafe { (*fuzz_input_ptr.add(i)) as u64 };
+                        }
+                        return Ok(data);
+                    }
+                    else {
+                        return Err(StreamError::StreamOutof(stream_info));
+                    }
+                },
+                std::collections::btree_map::Entry::Vacant(entry) => { 
+                    return Err(StreamError::StreamNotFound(stream_info));
+                },
+            }
         }
+        
     }
 
     pub fn set_dram_value(&mut self, addr : u64, len : u64, data : &[u8]) {
@@ -355,5 +416,14 @@ impl StreamInputs {
         self.inputs.insert(tmp.get_id().unwrap(), tmp);
     }
 
+    pub fn append_temp_stream_data(&mut self, stream_info : StreamInfo, len : usize) -> Vec<u8> {
+        let mut rng = rand::thread_rng();
+        let mut append_data = vec![0u8; len]; 
+        rng.fill(&mut append_data[..]);
+
+        let stream = self.inputs.get_mut(&stream_info.get_id()).unwrap();
+        stream.append_new_data(&append_data);
+        append_data
+    }
 }
         

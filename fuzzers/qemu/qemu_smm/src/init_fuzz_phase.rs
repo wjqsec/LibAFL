@@ -6,11 +6,12 @@ use libafl_bolts::math;
 use log::*;
 use std::ptr;
 use libafl::{
-    corpus::Corpus, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{AflMapFeedback, CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, CachedOnDiskCorpus, PowerQueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
+    corpus::Corpus,Error, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{AflMapFeedback, CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, CachedOnDiskCorpus, PowerQueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
 };
 use libafl_bolts::tuples::MatchNameRef;
 use libafl::feedbacks::stream::StreamFeedback;
 use libafl::inputs::multi::MultipartInput;
+use libafl::prelude::IfStage;
 use std::sync::{Arc, Mutex};
 use std::{error, fs};
 use libafl_bolts::{
@@ -111,7 +112,7 @@ pub fn init_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExi
                 debug!("qemu_run_to_end sync exit {:#x} {:#x} {:#x}",cmd,sync_exit_reason,pc);
                 if cmd == LIBAFL_QEMU_COMMAND_END {
                     match sync_exit_reason {
-                        LIBAFL_QEMU_END_CRASH => {
+                        LIBAFL_QEMU_END_CRASH | LIBAFL_QEMU_END_SMM_INIT_UNSUPPORT | LIBAFL_QEMU_END_SMM_ASSERT => {
                             exit_code = ExitKind::Ok; // init phase does not have crash we assume
                         },
                         LIBAFL_QEMU_END_SMM_INIT_END => {
@@ -122,9 +123,6 @@ pub fn init_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExi
                                     SMM_INIT_FUZZ_EXIT_SNAPSHOT = Box::into_raw(box_snap);
                                 }
                             }
-                            exit_code = ExitKind::Ok;
-                        },
-                        LIBAFL_QEMU_END_SMM_INIT_UNSUPPORT => {
                             exit_code = ExitKind::Ok;
                         },
                         _ => {
@@ -226,13 +224,25 @@ pub fn init_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExi
             info!("We imported {} inputs from disk.", state.corpus().count());
     }
 
-    let mutator = StdScheduledMutator::new(havoc_mutations().merge(tokens_mutations()));
+    let havoc_stage = StdMutationalStage::new(StdScheduledMutator::new(havoc_mutations().merge(tokens_mutations())));
+
+    let cb = |_fuzzer: &mut _,
+                  _executor: &mut _,
+                  state: &mut _,
+                  _event_manager: &mut _|
+         -> Result<bool, Error> {
+
+            Ok(false)
+        };
+
+    let op_havoc_stage = IfStage::new(cb, tuple_list!(havoc_stage));
+
     let mut shadow_executor = ShadowExecutor::new(executor, tuple_list!(cmplog_observer));
     let i2s = StdMutationalStage::new(StdScheduledMutator::new(tuple_list!(
         I2SRandReplace::new()
     )));
 
-    let mut stages = tuple_list!(ShadowTracingStage::new(&mut shadow_executor),i2s, StdMutationalStage::new(mutator));
+    let mut stages = tuple_list!(ShadowTracingStage::new(&mut shadow_executor),i2s, op_havoc_stage);
 
     
     loop {

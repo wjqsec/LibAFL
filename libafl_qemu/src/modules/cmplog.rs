@@ -204,24 +204,36 @@ where
 }
 
 pub extern "C" fn trace_cmp1_cmplog(_: *const (), id: u64, v0: u8, v1: u8) {
+    if v0 == v1 {
+        return;
+    }
     unsafe {
         __libafl_targets_cmplog_instructions(id as usize, 1, u64::from(v0), u64::from(v1));
     }
 }
 
 pub extern "C" fn trace_cmp2_cmplog(_: *const (), id: u64, v0: u16, v1: u16) {
+    if v0 == v1 {
+        return;
+    }
     unsafe {
         __libafl_targets_cmplog_instructions(id as usize, 2, u64::from(v0), u64::from(v1));
     }
 }
 
 pub extern "C" fn trace_cmp4_cmplog(_: *const (), id: u64, v0: u32, v1: u32) {
+    if v0 == v1 {
+        return;
+    }
     unsafe {
         __libafl_targets_cmplog_instructions(id as usize, 4, u64::from(v0), u64::from(v1));
     }
 }
 
 pub extern "C" fn trace_cmp8_cmplog(_: *const (), id: u64, v0: u64, v1: u64) {
+    if v0 == v1 {
+        return;
+    } 
     unsafe {
         __libafl_targets_cmplog_instructions(id as usize, 8, v0, v1);
     }
