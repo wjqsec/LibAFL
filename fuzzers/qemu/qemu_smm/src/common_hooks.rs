@@ -266,9 +266,9 @@ pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , o
         if IN_FUZZ == false {
             return;
         }
-        // if pc < CURRENT_MODULE_ADDR || pc >= CURRENT_MODULE_END {
-        //     return;
-        // }
+        if pc < CURRENT_MODULE_ADDR || pc >= CURRENT_MODULE_END {
+            return;
+        }
         if  addr < HOB_ADDR  || addr >= (HOB_ADDR + HOB_SIZE) { // HOB accees, needs to fuzz
             return;
         }

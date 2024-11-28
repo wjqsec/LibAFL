@@ -71,14 +71,13 @@ fn gen_init_random_seed(dir : &PathBuf) {
     initial_input.to_file(init_seed_path).unwrap();
 }
 
-fn run_to_smm_fuzz_point(qemu : Qemu, cpu : CPU, start_snapshot : &FuzzerSnapshot) -> FuzzerSnapshot {
+fn run_to_smm_fuzz_point(qemu : Qemu, cpu : CPU) -> FuzzerSnapshot {
     // run to the start cause we are now at the start of the smm fuzz driver
-    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, start_snapshot,10000000000, true, false);
+    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),10000000000, true, false);
     if let Ok(ref qemu_exit_reason) = qemu_exit_reason {
         if let QemuExitReason::SyncExit = qemu_exit_reason {
             if cmd == LIBAFL_QEMU_COMMAND_END {
                 if sync_exit_reason == LIBAFL_QEMU_END_SMM_FUZZ_START {
-                    start_snapshot.delete(qemu);
                     return FuzzerSnapshot::from_qemu(qemu);
                 }
                 else {
@@ -97,7 +96,7 @@ fn run_to_smm_fuzz_point(qemu : Qemu, cpu : CPU, start_snapshot : &FuzzerSnapsho
 }
 
 
-pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, (CmpLogModule, ())), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>, snapshot : &FuzzerSnapshot) -> SnapshotKind 
+pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, (CmpLogModule, ())), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>)
 {
     let qemu = emulator.qemu();
     let cpu: CPU = qemu.first_cpu().unwrap();
@@ -109,7 +108,7 @@ pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExit
     fs::create_dir_all(seed_dirs[0].clone()).unwrap();
     gen_init_random_seed(&seed_dirs[0]);
 
-    let smi_fuzz_snapshot = run_to_smm_fuzz_point(qemu, cpu, snapshot);
+    let smi_fuzz_snapshot = run_to_smm_fuzz_point(qemu, cpu);
 
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         
@@ -259,6 +258,5 @@ pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExit
     fuzzer
             .fuzz_loop(&mut stages, &mut shadow_executor, &mut state, &mut mgr)
             .unwrap();
-    SnapshotKind::None
 
 }

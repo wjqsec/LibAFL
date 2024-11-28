@@ -86,6 +86,7 @@ fn main() {
     })));
 
     let mut snapshot = SnapshotKind::None;
+    let mut first_snapshot_backup = FuzzerSnapshot::new_empty();
     unsafe {
         let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),10000000,false, false);
         if let Ok(qemu_exit_reason) = qemu_exit_reason {
@@ -94,12 +95,15 @@ fn main() {
                     if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_START {
                         set_current_module(arg1, arg2);
                         snapshot = SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
-                    } else if sync_exit_reason == LIBAFL_QEMU_END_SMM_MODULE_START {
-                        snapshot = SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::from_qemu(qemu));
-                    }   
+                        first_snapshot_backup = FuzzerSnapshot::from_qemu_untrack(qemu);
+                    }
                 }
             }
         }
+    }
+    if let SnapshotKind::None = snapshot {
+        error!("first breakpoint hit strange place");
+        exit_elegantly();
     }
     info!("first breakpoint hit");
 
@@ -121,31 +125,24 @@ fn main() {
     })));
     
 
-    // for test
-    // unsafe {
-    //     let sss = FuzzerSnapshot::from_qemu(qemu);
-    //     sss.restore_fuzz_snapshot(qemu);
-    //     qemu.run();
-    //     sss.restore_fuzz_snapshot(qemu);
-    //     qemu.run();
-    // }
-    // exit_elegantly();
-
-    let mut start_smm_module;
+    let mut module_index = 0;
     loop {
         // fuzz module init function one by one
         match snapshot {
-            SnapshotKind::None => { 
-                error!("got None"); 
-                exit_elegantly();
+            SnapshotKind::None => {   // we fail, start from the very begining.
+                module_index = 0;
+                first_snapshot_backup.restore_fuzz_snapshot(qemu, true);
+                snapshot = SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
+                error!("***************** restart *****************");
             },
             SnapshotKind::StartOfUefiSnap(_) => { 
                 error!("got StartOfUefi"); 
                 exit_elegantly();
             },
             SnapshotKind::StartOfSmmInitSnap(snap) => {
-                snapshot = init_phase_fuzz(&mut emulator ,&snap); 
+                snapshot = init_phase_fuzz(module_index, &mut emulator); 
                 snap.delete(qemu);
+                module_index += 1;
                 info!("passed one module");
             },
             SnapshotKind::EndOfSmmInitSnap(_) => { 
@@ -154,7 +151,6 @@ fn main() {
             },
             SnapshotKind::StartOfSmmModuleSnap(snap) => { 
                 info!("passed all modules");
-                start_smm_module = snap;
                 break;
             },
             SnapshotKind::StartOfSmmFuzzSnap(_) => { 
@@ -163,9 +159,6 @@ fn main() {
             },
         };
     }
-
-
-    let smi_fuzz_snapshot = FuzzerSnapshot::from_qemu(qemu);
 
     devread_id.remove(true);
     devwrite_id.remove(true);
@@ -187,5 +180,5 @@ fn main() {
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
         rdmsr_smm_fuzz_phase(in_ecx, out_eax, out_edx, fuzz_input);
     })));
-    smm_phase_fuzz(&mut emulator ,&start_smm_module);
+    smm_phase_fuzz(&mut emulator);
 }

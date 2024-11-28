@@ -30,6 +30,15 @@ impl FuzzerSnapshot {
             }
         }
     }
+    pub fn from_qemu_untrack(qemu : Qemu) -> Self {
+        let dev_filter = DeviceSnapshotFilter::DenyList(get_snapshot_dev_filter_list());
+        let qemu_snap = qemu.create_fast_snapshot_filter(false, &dev_filter);
+        unsafe {
+            FuzzerSnapshot {
+                qemu_snapshot : Some(qemu_snap),
+            }
+        }
+    }
     pub fn new_empty() -> Self {
         FuzzerSnapshot {
             qemu_snapshot : None,
