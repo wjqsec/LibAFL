@@ -73,6 +73,25 @@ fn gen_init_random_seed(dir : &PathBuf) {
 }
 
 
+fn try_run_without_fuzz(qemu : Qemu) -> SnapshotKind {
+    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 30000000,false, false);
+    if cmd == LIBAFL_QEMU_COMMAND_END {
+        if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_END {
+            let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 800000000,false, false);
+            if cmd == LIBAFL_QEMU_COMMAND_END {
+                if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_START {
+                    set_current_module(arg1, arg2);
+                    return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
+                }
+                else if sync_exit_reason == LIBAFL_QEMU_END_SMM_MODULE_START {
+                    return SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::from_qemu(qemu));
+                }
+            }
+        }
+    }
+    return SnapshotKind::None;
+}
+
 pub fn init_phase_fuzz(module_index : usize, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, (CmpLogModule, ())), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>) -> SnapshotKind 
 {
     let qemu = emulator.qemu();
@@ -102,6 +121,13 @@ pub fn init_phase_fuzz(module_index : usize, emulator: &mut Emulator<NopCommandM
 
     gen_init_random_seed(&seed_dirs[0]);
     
+    let try_snapshot = try_run_without_fuzz(qemu);
+    if let SnapshotKind::None = try_snapshot {
+        snapshot.restore_fuzz_snapshot(qemu, true);
+    } else {
+        snapshot.delete(qemu);
+        return try_snapshot;
+    }
 
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         
@@ -110,10 +136,12 @@ pub fn init_phase_fuzz(module_index : usize, emulator: &mut Emulator<NopCommandM
         unsafe {  
             GLOB_INPUT = (&mut inputs) as *mut StreamInputs;
         }
+        let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
+        set_fuzz_mem_switch(fuzz_input);
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu = in_qemu.first_cpu().unwrap();
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, 30000000,false, true);
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, 500000,false, true);
         let exit_code;
         debug!("new run exit {:?}",qemu_exit_reason);
         if let Ok(qemu_exit_reason) = qemu_exit_reason
@@ -123,6 +151,9 @@ pub fn init_phase_fuzz(module_index : usize, emulator: &mut Emulator<NopCommandM
                 if cmd == LIBAFL_QEMU_COMMAND_END {
                     match sync_exit_reason {
                         LIBAFL_QEMU_END_SMM_INIT_UNSUPPORT | LIBAFL_QEMU_END_SMM_ASSERT => {
+                            unsafe {
+                                CRASH_TIMES = 0;
+                            }
                             exit_code = ExitKind::Ok; // init phase does not have crash we assume
                         },
                         LIBAFL_QEMU_END_SMM_INIT_END => {
@@ -163,7 +194,7 @@ pub fn init_phase_fuzz(module_index : usize, emulator: &mut Emulator<NopCommandM
                 exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
-                error!("exit 3");
+                error!("Ctrl+C");
                 exit_elegantly();
                 exit_code = ExitKind::Ok;
             }
@@ -276,7 +307,7 @@ pub fn init_phase_fuzz(module_index : usize, emulator: &mut Emulator<NopCommandM
 
     
     loop {
-        if unsafe {CRASH_TIMES} > 10 {
+        if unsafe {CRASH_TIMES} > 100 {
             if unsafe { !SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() } {
                 let exit_snapshot = unsafe { Box::from_raw(SMM_INIT_FUZZ_EXIT_SNAPSHOT) };
                 exit_snapshot.delete(qemu);
