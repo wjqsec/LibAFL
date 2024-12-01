@@ -415,6 +415,17 @@ pub fn rdmsr_smm_fuzz_phase(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fu
     rdmsr_common(in_ecx, out_eax, out_edx, fuzz_input);
 }
 
+static mut SKIP_CURRENT_MODULE : bool = false;
+pub fn skip() {
+    unsafe {
+        SKIP_CURRENT_MODULE = true;
+    }
+}
+pub fn unskip() {
+    unsafe {
+        SKIP_CURRENT_MODULE = false;
+    }
+}
 pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
 {
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
@@ -660,6 +671,15 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                         }
                     }
                 }   
+            }
+        },
+        LIBAFL_QEMU_COMMAND_SMM_ASK_SKIP_MODULE => {
+            unsafe {
+                if SKIP_CURRENT_MODULE {
+                    ret = 1;
+                } else {
+                    ret = 0;
+                }
             }
         },
         _ => { 

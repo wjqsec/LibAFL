@@ -101,6 +101,7 @@ pub fn init_phase_fuzz(module_index : usize, emulator: &mut Emulator<NopCommandM
         SMM_INIT_FUZZ_EXIT_SNAPSHOT = ptr::null_mut();
         CRASH_TIMES = 0;
     }
+    unskip();
 
     let corpus_dir = PathBuf::from(INIT_PHASE_CORPUS_DIR).join(PathBuf::from(format!("init_phase_corpus_{}/", module_index)));
     let objective_dir = PathBuf::from(INIT_PHASE_SOLUTION_DIR).join(PathBuf::from(format!("init_phase_crash_{}/", module_index)));
