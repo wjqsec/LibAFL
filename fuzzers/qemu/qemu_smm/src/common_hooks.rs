@@ -417,6 +417,7 @@ pub fn rdmsr_smm_fuzz_phase(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fu
 
 static mut SKIP_CURRENT_MODULE : bool = false;
 pub fn skip() {
+    info!("unable to process, skip");
     unsafe {
         SKIP_CURRENT_MODULE = true;
     }

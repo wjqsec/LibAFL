@@ -2,6 +2,7 @@ use core::{ptr::addr_of_mut, time::Duration};
 use std::cell::UnsafeCell;
 use std::fmt::format;
 use std::{path::PathBuf, process};
+use libafl::state::{HasLastFoundTime, HasStartTime};
 use libafl_bolts::math;
 use log::*;
 use std::ptr;
@@ -308,14 +309,9 @@ pub fn init_phase_fuzz(module_index : usize, emulator: &mut Emulator<NopCommandM
 
     
     loop {
-        if unsafe {CRASH_TIMES} > 100 {
-            if unsafe { !SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() } {
-                let exit_snapshot = unsafe { Box::from_raw(SMM_INIT_FUZZ_EXIT_SNAPSHOT) };
-                exit_snapshot.delete(qemu);
-            }
-            snapshot.delete(qemu);
-            return SnapshotKind::None;
-        }
+        fuzzer
+            .fuzz_one(&mut stages, &mut shadow_executor, &mut state, &mut mgr)
+            .unwrap();
         if unsafe { !SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() } {
             let exit_snapshot = unsafe { Box::from_raw(SMM_INIT_FUZZ_EXIT_SNAPSHOT) };
             let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &exit_snapshot,800000000, true, false);
@@ -335,22 +331,33 @@ pub fn init_phase_fuzz(module_index : usize, emulator: &mut Emulator<NopCommandM
                         }
                     }
                 } else if let QemuExitReason::End(_) = qemu_exit_reason {
-                    error!("exit 8");
+                    error!("fuzz one module over, run to next module error");
                     exit_elegantly();
                 }
             }
-
+            exit_snapshot.delete(qemu);
             unsafe {
-                exit_snapshot.delete(qemu);
                 SMM_INIT_FUZZ_EXIT_SNAPSHOT = ptr::null_mut();
             }
             snapshot.restore_fuzz_snapshot(qemu, true);
-            warn!("smm init found {:?} {pc:#x} {cmd:#x} {sync_exit_reason:#x}",qemu_exit_reason);
-            
+            warn!("fuzz one module over, run to next module exit with {:?} {pc:#x} {cmd:#x} {sync_exit_reason:#x}",qemu_exit_reason);
         }
-        fuzzer
-            .fuzz_one(&mut stages, &mut shadow_executor, &mut state, &mut mgr)
-            .unwrap();
+        if unsafe {CRASH_TIMES} > 100 {
+            if unsafe { !SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() } {
+                let exit_snapshot = unsafe { Box::from_raw(SMM_INIT_FUZZ_EXIT_SNAPSHOT) };
+                exit_snapshot.delete(qemu);
+            }
+            snapshot.delete(qemu);
+            return SnapshotKind::None;
+        }
+
+        
+        // if (*state.executions() > 20000) || (*state.executions() > 1000 && state.corpus().count() <= 1 ) {
+        //     skip();
+        // }
+        if libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 60 * 1 {
+            skip();
+        }
     }
     unreachable!();
 
