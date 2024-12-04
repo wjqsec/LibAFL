@@ -143,22 +143,16 @@ impl RawStreamInput {
         self.cursor += len;
         Some(ret)
     }
-    pub fn get_input_all_ptr(&mut self) -> Option<(*const u8, usize)> {
-        if self.cursor >= self.len {
-            return None;
-        }
+    pub fn get_input_all_ptr(&mut self) -> (*const u8, usize) {
         let ret = unsafe {(self.input.add(self.cursor as usize), self.len - self.cursor)};
         self.cursor = self.len;
-        Some(ret)
+        ret
     }
     pub fn get_used(&self) -> usize {
         self.cursor
     }
     pub fn get_unused(&self) -> usize {
-        if self.cursor >= self.len {
-            return 0;
-        }
-        return self.len - self.cursor;
+        self.len - self.cursor
     }
 }
 
@@ -220,7 +214,7 @@ impl StreamInput{
             StreamInput::OldStream(stream,_) => stream.get_input_len_ptr(len),
         }
     }
-    pub fn get_input_all_ptr(&mut self) -> Option<(*const u8, usize)> {
+    pub fn get_input_all_ptr(&mut self) -> (*const u8, usize) {
         match self {
             StreamInput::NewStream(_, _, stream,_) => stream.get_input_all_ptr(),
             StreamInput::OldStream(stream,_) => stream.get_input_all_ptr(),
@@ -296,11 +290,11 @@ impl StreamInputs {
             },
         }
     }
-    pub fn get_msr_fuzz_data(&mut self, len : u64) -> Result<(*const u8), StreamError> {
+    pub fn get_msr_fuzz_data(&mut self) -> Result<(*const u8), StreamError> {
         let stream_info = StreamInfo::new_msr_stream();
         match self.inputs.entry(stream_info.get_id()) {
             std::collections::btree_map::Entry::Occupied(mut entry) => {
-                if let Some(fuzz_input_ptr) = entry.get_mut().get_input_len_ptr(len as usize) {
+                if let Some(fuzz_input_ptr) = entry.get_mut().get_input_len_ptr(8) {
                     return Ok(fuzz_input_ptr);
                 }
                 else {
@@ -316,12 +310,8 @@ impl StreamInputs {
         let stream_info = StreamInfo::new_stream_seq_stream();
         match self.inputs.entry(stream_info.get_id()) {
             std::collections::btree_map::Entry::Occupied(mut entry) => {
-                if let Some((fuzz_input_ptr,len)) = entry.get_mut().get_input_all_ptr() {
-                    return Ok((fuzz_input_ptr,len));
-                }
-                else {
-                    return Err(StreamError::StreamOutof(stream_info));
-                }
+                let (fuzz_input_ptr,len) = entry.get_mut().get_input_all_ptr();
+                return Ok((fuzz_input_ptr,len));
             },
             std::collections::btree_map::Entry::Vacant(entry) => { 
                 return Err(StreamError::StreamNotFound(stream_info));
@@ -335,14 +325,11 @@ impl StreamInputs {
                 if let Some((claimed_len_ptr)) = entry.get_mut().get_input_len_ptr(8) { 
                     let claimed_len = unsafe {*(claimed_len_ptr as *const u64)} as usize;
                     let unused_len = entry.get().get_unused();
-                    if unused_len == 0 || claimed_len == 0 {
-                        return Err(StreamError::StreamNotFound(stream_info)); 
-                    }
                     let actual_len = min(claimed_len, unused_len);
                     if let Some((fuzz_input_ptr)) = entry.get_mut().get_input_len_ptr(actual_len) { 
                         return Ok((fuzz_input_ptr, claimed_len, actual_len));
                     } else {
-                        return Err(StreamError::StreamOutof(stream_info));
+                        return Err(StreamError::Unknown);
                     }
                 } else {
                     return Err(StreamError::StreamOutof(stream_info));
@@ -354,6 +341,9 @@ impl StreamInputs {
         }
     }
     pub fn get_pcd_fuzz_data(&mut self, len : u64) -> Result<(*const u8), StreamError> {
+        if len > 8 {
+            return Err(StreamError::LargeDatasize(len));
+        }
         let stream_info = StreamInfo::new_pcd_stream();
         match self.inputs.entry(stream_info.get_id()) {
             std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -450,6 +440,22 @@ impl StreamInputs {
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 if let Some(fuzz_input_ptr) = entry.get_mut().get_input_len_ptr(len as usize) {
                     return Ok(fuzz_input_ptr);
+                }
+                else {
+                    return Err(StreamError::StreamOutof(stream_info));
+                }
+            },
+            std::collections::btree_map::Entry::Vacant(entry) => { 
+                return Err(StreamError::StreamNotFound(stream_info));
+            },
+        }
+    }
+    pub fn get_smi_group_index_fuzz_data(&mut self) -> Result<u8, StreamError> {
+        let stream_info = StreamInfo::new_smi_group_index_stream();
+        match self.inputs.entry(stream_info.get_id()) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                if let Some(fuzz_input_ptr) = entry.get_mut().get_input_len_ptr(1) {
+                    return Ok(unsafe { *fuzz_input_ptr });
                 }
                 else {
                     return Err(StreamError::StreamOutof(stream_info));

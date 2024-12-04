@@ -133,7 +133,7 @@ pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExit
                             unsafe {CRASH_TIMES += 1;}
                             exit_code = ExitKind::Crash;
                         },
-                        LIBAFL_QEMU_END_SMM_FUZZ_END => {
+                        LIBAFL_QEMU_END_SMM_FUZZ_END | LIBAFL_QEMU_END_SMM_ASSERT => {
                             unsafe {END_TIMES += 1;}
                             exit_code = ExitKind::Ok;
                         },
