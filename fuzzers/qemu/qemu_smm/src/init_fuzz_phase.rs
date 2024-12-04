@@ -342,14 +342,14 @@ pub fn init_phase_fuzz(module_index : usize, emulator: &mut Emulator<NopCommandM
             snapshot.restore_fuzz_snapshot(qemu, true);
             warn!("fuzz one module over, run to next module exit with {:?} {pc:#x} {cmd:#x} {sync_exit_reason:#x}",qemu_exit_reason);
         }
-        if unsafe {CRASH_TIMES} > 100 {
-            if unsafe { !SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() } {
-                let exit_snapshot = unsafe { Box::from_raw(SMM_INIT_FUZZ_EXIT_SNAPSHOT) };
-                exit_snapshot.delete(qemu);
-            }
-            snapshot.delete(qemu);
-            return SnapshotKind::None;
-        }
+        // if unsafe {CRASH_TIMES} > 100 {
+        //     if unsafe { !SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() } {
+        //         let exit_snapshot = unsafe { Box::from_raw(SMM_INIT_FUZZ_EXIT_SNAPSHOT) };
+        //         exit_snapshot.delete(qemu);
+        //     }
+        //     snapshot.delete(qemu);
+        //     return SnapshotKind::None;
+        // }
 
         
         // if (*state.executions() > 20000) || (*state.executions() > 1000 && state.corpus().count() <= 1 ) {
