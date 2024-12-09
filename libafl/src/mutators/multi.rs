@@ -3,7 +3,6 @@
 use core::cmp::{min, Ordering};
 
 use libafl_bolts::{rands::Rand, Error};
-
 use crate::{
     corpus::{Corpus, CorpusId},
     impl_default_multipart,
@@ -24,6 +23,8 @@ use crate::{
     state::{HasCorpus, HasMaxSize, HasRand},
 };
 use crate::prelude::State;
+use rand::prelude::*;
+use rand::distributions::WeightedIndex;
 /// Marker trait for if the default multipart input mutator implementation is appropriate.
 ///
 /// You should implement this type for your mutator if you just want a random part of the input to
@@ -44,7 +45,9 @@ where
         if input.parts().is_empty(){
             Ok(MutationResult::Skipped)
         } else {
-            let selected: usize = state.rand_mut().below(input.parts().len());
+            let dist = WeightedIndex::new(input.weights()).unwrap();
+            let mut rng = thread_rng();
+            let selected = dist.sample(&mut rng);
             let limit = input.part_limit(selected);
             let mutated = input.part_mut(selected).unwrap();
             state.set_max_size(limit);
@@ -191,6 +194,7 @@ where
         let choice = name_choice % other.names().len();
         let name = &other.names()[choice];
         let limit = other.part_limit(choice);
+        let weight = other.part_weight(choice);
         let other_size = other.parts()[choice].bytes().len();
         if other_size < 2 {
             return Ok(MutationResult::Skipped);
@@ -224,7 +228,7 @@ where
             ))
         } else {
             // just add it!
-            input.add_part(name.clone(), other.parts()[choice].clone(), limit);
+            input.add_part(name.clone(), other.parts()[choice].clone(), limit, weight);
 
             Ok(MutationResult::Mutated)
         }
@@ -332,7 +336,7 @@ where
             ))
         } else {
             // just add it!
-            input.add_part(name.clone(), other.parts()[choice].clone(), other.part_limit(choice));
+            input.add_part(name.clone(), other.parts()[choice].clone(), other.part_limit(choice), other.part_weight(choice));
 
             Ok(MutationResult::Mutated)
         }

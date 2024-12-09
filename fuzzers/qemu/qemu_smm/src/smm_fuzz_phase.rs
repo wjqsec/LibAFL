@@ -8,6 +8,7 @@ use std::ptr;
 use libafl::{
     corpus::Corpus, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{AflMapFeedback, CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, CachedOnDiskCorpus, PowerQueueScheduler, QueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
 };
+use libafl::mutators::Tokens;
 use libafl_bolts::tuples::MatchNameRef;
 use libafl::feedbacks::stream::StreamFeedback;
 use libafl::inputs::multi::MultipartInput;
@@ -39,6 +40,7 @@ use libafl_qemu::EmulatorExitHandler;
 use libafl_qemu::modules::EmulatorModuleTuple;
 use libafl::prelude::State;
 use libafl::prelude::HasExecutions;
+use libafl::HasMetadata;
 use libafl_qemu::modules::CmpLogModule;
 use libafl_qemu::QemuExecutor;
 use libafl_qemu::modules::cmplog::CmpLogObserver;
@@ -64,11 +66,23 @@ static mut STREAM_OVER_TIMES : u64 = 0;
 
 fn gen_init_random_seed(dir : &PathBuf) {
     let mut initial_input = MultipartInput::<BytesInput>::new();
-    initial_input.add_part(0 as u128, BytesInput::new(DEFAULT_STREAM_DATA.to_vec()), 0x10);
+    initial_input.add_part(0 as u128, BytesInput::new(DEFAULT_STREAM_DATA.to_vec()), 0x10, 0);
     let mut init_seed_path = PathBuf::new(); 
     init_seed_path.push(dir.clone());
     init_seed_path.push(PathBuf::from("init.bin"));
     initial_input.to_file(init_seed_path).unwrap();
+}
+fn add_uefi_fuzz_token(state : &mut StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>) {
+    let mut tokens = Tokens::new();
+
+    for i in 0..10 {
+        tokens.add_token(&(i as u8).to_le_bytes().to_vec());
+        tokens.add_token(&(i as u16).to_le_bytes().to_vec());
+        tokens.add_token(&(i as u32).to_le_bytes().to_vec());
+        tokens.add_token(&(i as u64).to_le_bytes().to_vec());
+    }
+
+    state.add_metadata(tokens);
 }
 
 fn run_to_smm_fuzz_point(qemu : Qemu, cpu : CPU) -> FuzzerSnapshot {
@@ -116,11 +130,12 @@ pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExit
         let mut inputs = StreamInputs::from_multiinput(input);
         unsafe {  
             GLOB_INPUT = (&mut inputs) as *mut StreamInputs;
+            IN_SMI = false;
         }
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu = in_qemu.first_cpu().unwrap();
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &smi_fuzz_snapshot, 50000000,false, true);
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &smi_fuzz_snapshot, 5000000,false, true);
         let exit_code;
         debug!("new run exit {:?}",qemu_exit_reason);
         if let Ok(qemu_exit_reason) = qemu_exit_reason
@@ -214,6 +229,7 @@ pub fn smm_phase_fuzz(emulator: &mut Emulator<NopCommandManager, NopEmulatorExit
         // Same for objective feedbacks
         &mut objective,
     ).unwrap();
+    add_uefi_fuzz_token(&mut state);
 
     let mon = SimpleMonitor::new(|s| 
         info!("{s} end:{:?} stream:{:?} crash:{:?} timeout:{:?}",unsafe{END_TIMES}, unsafe{STREAM_OVER_TIMES}, unsafe{CRASH_TIMES}, unsafe{TIMEOUT_TIMES})  

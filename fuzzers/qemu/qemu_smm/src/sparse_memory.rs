@@ -29,17 +29,6 @@ impl SparseMemory {
         }
     }
 
-    pub fn read_byte(&mut self, addr : u64) -> Result<u8,DramError> {
-        return Err(DramError::Uninit(vec![]));
-        // match self.memory.entry(addr) { 
-        //     std::collections::btree_map::Entry::Occupied(entry) => {
-        //         return Ok(entry.get().clone());
-        //     },
-        //     std::collections::btree_map::Entry::Vacant(entry) => {
-        //         return Err(DramError::Uninit(vec![addr]));
-        //     },
-        // }
-    }
     pub fn read_bytes(&mut self, addr : u64, len : u64) -> Result<u64,DramError> {
         let mut ret : u64 = 0;
         let mut uinit_addrs= Vec::new();
@@ -102,24 +91,6 @@ impl SparseMemory {
         } else {
             return Err(DramError::Uninit(uinit_addrs));
         }
-        // for i in 0..len {
-        //     let access_addr = addr + i as u64;
-        //     match self.read_byte(access_addr) {
-        //         Ok(data) => {
-        //             ret = (ret << 8) | (data as u64);
-        //         },
-        //         Err(err) => {
-        //             if let DramError::Uninit(mut addrs) = err {
-        //                 uinit_addrs.append(&mut addrs);
-        //             }
-        //         },
-        //     }
-        // }
-        // if uinit_addrs.is_empty() {
-        //     return Ok(ret);
-        // } else {
-        //     return Err(DramError::Uninit(uinit_addrs));
-        // }
     }
 
     pub fn write_byte(&mut self, addr : u64, value : u8) {
@@ -139,16 +110,9 @@ impl SparseMemory {
                 entry.insert((data,init));
             },
         }
-        
-        // self.memory.entry(addr).and_modify(
-        //     |value_ptr | *value_ptr = value
-        // ).or_insert(value);
     }
 
     pub fn write_bytes(&mut self, addr : u64, len : u64, data_input : &[u8]) {
-        let base_addr1  = addr & ADDR_MASK;
-        let base_addr2 = (addr + len) & ADDR_MASK;
-
         let base_addr1  = addr &            ADDR_MASK;
         let base_addr2 = (addr + NUM_PAGE_BYTES as u64) & ADDR_MASK;
 
@@ -190,10 +154,30 @@ impl SparseMemory {
                 entry.insert((data,init));
             },  
         }
-        // for i in 0..len {
-        //     let access_addr = addr + i as u64;
-        //     let insert_value = data[i as usize].try_into().unwrap();
-        //     self.write_byte(access_addr, insert_value);
-        // }
+    }
+    fn init_byte(&mut self, addr : u64, value : u8) {
+        let mut base_addr  = addr & ADDR_MASK;
+        let offset = (addr - base_addr) as usize;
+        match self.memory.entry(base_addr) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                let (data, init) = entry.get_mut();
+                if !init[offset] {
+                    data[offset] = value;
+                    init[offset] = true;
+                }
+            },
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                let mut data = [0;NUM_PAGE_BYTES];
+                let mut init = [false;NUM_PAGE_BYTES];
+                data[offset] = value;
+                init[offset] = true;
+                entry.insert((data,init));
+            },
+        }
+    }
+    pub fn init_bytes(&mut self, addr : u64, value : &Vec<u8>) {
+        for i in 0..value.len() {
+            self.init_byte(addr + i as u64, value[i]);
+        }
     }
 }

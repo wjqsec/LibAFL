@@ -80,7 +80,7 @@ fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut 
                             unsafe {data.copy_from(fuzz_input_ptr, size as usize);}
                         },
                         _ => {    
-                            error!("io stream error");
+                            error!("io stream generate error");
                             exit_elegantly();
                         }
                     }
@@ -93,7 +93,7 @@ fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut 
                     }
                 },
                 _ => {
-                    error!("io stream error");
+                    error!("io stream get error");
                     exit_elegantly();
                 }
             }
@@ -125,6 +125,9 @@ pub fn post_io_read_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : 
     let addr = base + offset;
     unsafe {
         if IN_FUZZ == false || io_err == 0 {
+            return;
+        }
+        if pc < CURRENT_MODULE_ADDR || pc >= CURRENT_MODULE_END {
             return;
         }
     }
@@ -166,8 +169,13 @@ fn pre_io_write_common(base : GuestAddr, offset : GuestAddr,size : usize, data :
 
 pub fn pre_io_write_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool, cpu : CPU)
 {
+    let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
+    let addr = base + offset;
     unsafe {
         if IN_FUZZ == false {
+            return;
+        }
+        if pc < CURRENT_MODULE_ADDR || pc >= CURRENT_MODULE_END {
             return;
         }
     }
@@ -213,21 +221,27 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
                         },
                         StreamError::StreamOutof(id) => {
                             let append_data = fuzz_input.append_temp_stream_data(id, size as usize);
-                            unsafe { 
-                                fuzz_input.set_dram_value(addr, size, append_data.as_slice());
-                                (DUMMY_MEMORY_HOST_PTR as *mut u8).copy_from(append_data.as_ptr(), size as usize);
-                                *out_addr = DUMMY_MEMORY_VIRT_ADDR;
-                                NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+                            fuzz_input.init_dram_value(addr, &append_data);
+                            match fuzz_input.get_dram_fuzz_data(addr, size, consistent_access) {
+                                Ok(data) => { 
+                                    unsafe { 
+                                        *DUMMY_MEMORY_HOST_PTR = data;
+                                        *out_addr = DUMMY_MEMORY_VIRT_ADDR;
+                                        NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+                                    }
+                                },
+                                _ => {
+                                    error!("dram fuzz data append error");
+                                },
                             }
                         },
                         _ => {
-                            error!("dram fuzz data generate error");
+                            error!("dram fuzz data get error");
                             exit_elegantly();
-                        }
+                        },
                     }
                 }
             }
-            
         },
         1 => {
             unsafe {
@@ -287,7 +301,7 @@ pub fn set_fuzz_mem_switch(fuzz_input : &mut StreamInputs) {
                     }
                 },
                 _ => {
-                    error!("fuzz mem switch data generate error");
+                    error!("fuzz mem switch data get error");
                     exit_elegantly();
                 }
             }
@@ -296,10 +310,6 @@ pub fn set_fuzz_mem_switch(fuzz_input : &mut StreamInputs) {
 }
 pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
 {
-    if size > 16 {
-        error!("pre_memrw_common get size large than 16 it is {:?}", size);
-        exit_elegantly();
-    }
     unsafe {
         if IN_FUZZ == false {
             return;
@@ -332,12 +342,8 @@ pub fn pre_memrw_smm_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , ou
     if addr >= 0x7000000 && addr < 0x8000000 { // inside sram
         return;
     }
-    if addr >= unsafe {COMMBUF_ADDR} &&  addr <= unsafe {COMMBUF_ADDR + COMMBUF_SIZE} {  //outside comm buffer
+    if addr >= unsafe {COMMBUF_ADDR} && addr < unsafe {COMMBUF_ADDR + COMMBUF_SIZE} {  //outside comm buffer
         return;
-    }
-    if size > 16 {
-        error!("pre_memrw_common get size large than 16 it is {:?}", size);
-        exit_elegantly();
     }
     pre_memrw_common(pc, addr, size, out_addr, rw, val, fuzz_input, cpu, true);
 }
@@ -378,7 +384,7 @@ fn rdmsr_common(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fuzz_input : &
                     }
                 }
                 _ => {
-                    error!("msr fuzz data generate error");
+                    error!("msr fuzz data get error");
                     exit_elegantly();
                 }
             }
@@ -388,7 +394,7 @@ fn rdmsr_common(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fuzz_input : &
     unsafe {
         let eax_info = *out_eax;
         let edx_info = *out_edx;
-        info!("rdmsr {in_ecx:#x} {eax_info:#x} {edx_info:#x}");
+        debug!("rdmsr {in_ecx:#x} {eax_info:#x} {edx_info:#x}");
     }
 }
 pub fn rdmsr_init_fuzz_phase(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fuzz_input : &mut StreamInputs) 
@@ -445,7 +451,6 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             unsafe {
                 SMI_SELECT_BUFFER_ADDR = arg1;
                 SMI_SELECT_BUFFER_SIZE = arg2;
-
                 let smi_select_buffer_phy_addr = cpu.get_phys_addr_with_offset(SMI_SELECT_BUFFER_ADDR).unwrap();
                 let smi_select_buffer_host_addr = cpu.get_host_addr(smi_select_buffer_phy_addr);
                 SMI_SELECT_BUFFER_HOST_PTR = smi_select_buffer_host_addr;
@@ -481,18 +486,17 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                     _ => {    
                                         error!("smi select info generate error");
                                         exit_elegantly();
-                                    }
+                                    },
                                 }
                             },
                             _ => {
-                                error!("smi select info generate error");
+                                error!("smi select info get error");
                                 exit_elegantly();
                             },
                         }
                     }
                 }
             }
-            
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_COMMBUF_FUZZ_DATA => {
             if unsafe { IN_FUZZ } {
@@ -513,7 +517,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                         ret = claimed_len as u64;
                                     },
                                     _ => {    
-                                        error!("comm buffer generate error 1");
+                                        error!("comm buffer generate error");
                                         exit_elegantly();
                                     }
                                 }
@@ -559,9 +563,10 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                     1 => append_data[0] as u64,
                                     _ => 0,
                                 };
+                                
                             },
                             _ => {
-                                error!("pcd data generate error");
+                                error!("pcd data get error");
                                 exit_elegantly();
                             },
                         }
@@ -607,7 +612,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                         }
                                     },
                                     _ => {    
-                                        error!("variable data generate error");
+                                        error!("variable data generate error, request too much variable data");
                                         exit_elegantly();
                                     }
                                 }
@@ -619,7 +624,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                 }
                             },
                             _ => {
-                                error!("variable data generate error");
+                                error!("variable data get error");
                                 exit_elegantly();
                             },
                         }
@@ -652,7 +657,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                 ret = append_data[0] as u64;
                             },
                             _ => {
-                                error!("variable data generate error");
+                                error!("smi group index data get error");
                                 exit_elegantly();
                             },
                         }

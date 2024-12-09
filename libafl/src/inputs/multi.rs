@@ -24,6 +24,7 @@ pub struct MultipartInput<I> {
     ids: Vec<u128>,
     parts: Vec<I>,
     limits : Vec<usize>,
+    weights : Vec<u8>,
 }
 
 impl<I> Default for MultipartInput<I> {
@@ -40,6 +41,7 @@ impl<I> MultipartInput<I> {
             parts: Vec::new(),
             ids: Vec::new(),
             limits : Vec::new(),
+            weights : Vec::new(),
         }
     }
     pub fn is_empty(&self) -> bool {
@@ -57,6 +59,7 @@ impl<I> MultipartInput<I> {
             self.ids.remove(index);
             self.parts.remove(index);
             self.limits.remove(index);
+            self.weights.remove(index);
         }
         
     }
@@ -132,6 +135,9 @@ impl<I> MultipartInput<I> {
         self.limits.get(idx).unwrap().clone()
     }
 
+    pub fn part_weight(&self, idx : usize) -> u8 {
+        self.weights.get(idx).unwrap().clone()
+    }
     /// Get the ids associated with the subparts of this input. Used to distinguish between the
     /// input components in the case where some parts may or may not be present, or in different
     /// orders.
@@ -142,6 +148,9 @@ impl<I> MultipartInput<I> {
     #[must_use]
     pub fn limits(&self) -> &[usize] {
         &self.limits
+    }
+    pub fn weights(&self) ->&[u8] {
+        &self.weights
     }
     /// Gets a reference to each part with the provided id.
     pub fn parts_by_name<'a, 'b>(
@@ -174,13 +183,14 @@ impl<I> MultipartInput<I> {
     }
 
     /// Adds a part to this input, potentially with the same id as an existing part.
-    pub fn add_part(&mut self, id: u128, part: I, limit : usize) {
+    pub fn add_part(&mut self, id: u128, part: I, limit : usize, weight : u8) {
         if self.ids.contains(&id) {
             panic!("multi input does not support multiple same id inputs");
         }
         self.ids.push(id);
         self.parts.push(part);
         self.limits.push(limit);
+        self.weights.push(weight);
     }
 
     /// Iterate over the parts of this input; no order is specified.
@@ -195,13 +205,13 @@ impl<I> MultipartInput<I> {
 
 impl<I, It, S> From<It> for MultipartInput<I>
 where
-    It: IntoIterator<Item = (S, I, usize)>,
+    It: IntoIterator<Item = (S, I, usize, u8)>,
     S: Into<u128>,
 {
     fn from(parts: It) -> Self {
         let mut input = MultipartInput::new();
-        for (id, part, limit) in parts {
-            input.add_part(id.into(), part, limit);
+        for (id, part, limit, weight) in parts {
+            input.add_part(id.into(), part, limit, weight);
         }
         input
     }

@@ -9,7 +9,7 @@ use libafl_qemu::GuestReg;
 use libafl_qemu::Regs;
 
 
-pub static STREAM_FEEDBACK : Lazy<Arc<Mutex<Vec<(u128,bool,usize,Option<Vec<u8>>,Option<Vec<u8>>,usize)>>>> = Lazy::new( || Arc::new(Mutex::new(Vec::new())));
+pub static STREAM_FEEDBACK : Lazy<Arc<Mutex<Vec<(u128,bool,usize,Option<Vec<u8>>,Vec<u8>,usize,u8)>>>> = Lazy::new( || Arc::new(Mutex::new(Vec::new())));
 
 fn post_fuzz_input_process() {
     if !unsafe { GLOB_INPUT.is_null() } {
@@ -17,9 +17,9 @@ fn post_fuzz_input_process() {
         let streams = fuzz_input.get_streams();
         for (id, input) in streams.iter() {
             if input.is_new_stream() {
-                STREAM_FEEDBACK.lock().unwrap().push((*id, true, input.get_used(), input.get_new_stream(), input.get_append_stream(), input.get_limit().unwrap()));
+                STREAM_FEEDBACK.lock().unwrap().push((*id, true, input.get_used(), input.get_new_stream(), input.get_append_stream(), input.get_limit().unwrap(), input.get_weight()));
             } else {
-                STREAM_FEEDBACK.lock().unwrap().push((*id, false, input.get_used(), input.get_new_stream(), input.get_append_stream(), 0));
+                STREAM_FEEDBACK.lock().unwrap().push((*id, false, input.get_used(), input.get_new_stream(), input.get_append_stream(), 0, 0));
             }
         }
     }

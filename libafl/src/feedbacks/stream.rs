@@ -54,13 +54,12 @@ where
         EM: EventFirer<State = S>,
     {
         let observer = observers.get(&self.observer_handle).unwrap();
-        for (id, tmp_generated, used, input,append_input, limit) in observer.get_newstream().into_iter() {
-            let append_input = append_input.unwrap();
+        for (id, tmp_generated, used, input,append_input, limit, weight) in observer.get_newstream().into_iter() {
             if tmp_generated {
                 let mut input = input.unwrap();
                 input.truncate(used);
                 input.extend(append_input);
-                testcase.input_mut().as_mut().unwrap().add_part(id, BytesInput::new(input), limit);
+                testcase.input_mut().as_mut().unwrap().add_part(id, BytesInput::new(input), limit, weight);
             } else {
                 if used == 0 && append_input.len() == 0 {
                     testcase.input_mut().as_mut().unwrap().remove_part(&id);

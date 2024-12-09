@@ -66,7 +66,7 @@ static mut CRASH_TIMES : u64 = 0;
 
 fn gen_init_random_seed(dir : &PathBuf) {
     let mut initial_input = MultipartInput::<BytesInput>::new();
-    initial_input.add_part(0 as u128, BytesInput::new(DEFAULT_STREAM_DATA.to_vec()),0x10);
+    initial_input.add_part(0 as u128, BytesInput::new(DEFAULT_STREAM_DATA.to_vec()),0x10,0);
     let mut init_seed_path = PathBuf::new(); 
     init_seed_path.push(dir.clone());
     init_seed_path.push(PathBuf::from("init.bin"));

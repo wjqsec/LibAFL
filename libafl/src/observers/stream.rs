@@ -15,18 +15,18 @@ use crate::prelude::ExitKind;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StreamObserver {
     name: Cow<'static, str>,
-    stream_feedback : Arc<Mutex<Vec<(u128,bool,usize,Option<Vec<u8>>,Option<Vec<u8>>,usize)>>>,
+    stream_feedback : Arc<Mutex<Vec<(u128,bool,usize,Option<Vec<u8>>,Vec<u8>,usize,u8)>>>,
 }
 
 impl StreamObserver {
     #[must_use]
-    pub fn new(name: &'static str, stream_feedback : Arc<Mutex<Vec<(u128,bool,usize,Option<Vec<u8>>,Option<Vec<u8>>,usize)>>>) -> Self {
+    pub fn new(name: &'static str, stream_feedback : Arc<Mutex<Vec<(u128,bool,usize,Option<Vec<u8>>,Vec<u8>,usize,u8)>>>) -> Self {
         Self {
             name: Cow::from(name),
             stream_feedback,
         }
     }
-    pub fn get_newstream(&self) -> Vec<(u128,bool,usize,Option<Vec<u8>>,Option<Vec<u8>>,usize)> {
+    pub fn get_newstream(&self) -> Vec<(u128,bool,usize,Option<Vec<u8>>,Vec<u8>,usize,u8)> {
         self.stream_feedback.lock().unwrap().clone()
     }
 }

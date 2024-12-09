@@ -30,82 +30,95 @@ const STREAM_MASK : u128 =           0xf0000000000000000000000000000000;
 
 #[derive(Debug)]
 pub enum StreamInfo {
-    IoStream(u128, usize, usize),
-    DramStream(u128, usize, usize),
-    CommBufStream(u128, usize, usize),
-    MsrStream(u128, usize, usize),
-    StreamSeqStream(u128, usize, usize),
-    PcdStream(u128, usize, usize),
-    SmiGroupIndexStream(u128, usize, usize),
-    FuzzMemSwitchStream(u128, usize, usize),
-    VariableStream(u128, usize, usize),
+    IoStream(u128, usize, usize, u8),
+    DramStream(u128, usize, usize, u8),
+    CommBufStream(u128, usize, usize, u8),
+    MsrStream(u128, usize, usize, u8),
+    StreamSeqStream(u128, usize, usize, u8),
+    PcdStream(u128, usize, usize, u8),
+    SmiGroupIndexStream(u128, usize, usize, u8),
+    FuzzMemSwitchStream(u128, usize, usize, u8),
+    VariableStream(u128, usize, usize, u8),
 }
 
 impl StreamInfo {
     fn new_io_stream(pc : u64, addr : u64) -> Self {
-        StreamInfo::IoStream(((pc as u128) << 64) | (addr as u128) | IO_STREAM_MASK, 16, 32)
+        StreamInfo::IoStream(((pc as u128) << 64) | (addr as u128) | IO_STREAM_MASK, 32, 64, 1)
     }
     fn new_dram_stream() -> Self {
-        StreamInfo::DramStream(DRAM_STREAM_MASK, 128, 256)
+        StreamInfo::DramStream(DRAM_STREAM_MASK, 256, 512, 2)
     }
     fn new_comm_buf_stream(index : u64, times : u64) -> Self {
-        StreamInfo::CommBufStream(COMMBUF_STREAM_MASK | ((index as u128) << 32) | (times as u128), 64, 128)
+        StreamInfo::CommBufStream(COMMBUF_STREAM_MASK | ((index as u128) << 32) | (times as u128), 128, 256, 10)
     }
     fn new_msr_stream() -> Self {
-        StreamInfo::MsrStream(MSR_STREAM_MASK, 16, 32)
+        StreamInfo::MsrStream(MSR_STREAM_MASK, 64, 128, 1)
     }
     fn new_stream_seq_stream() -> Self {
-        StreamInfo::StreamSeqStream(STREAMSEQ_STREAM_MASK, 4, 8)
+        StreamInfo::StreamSeqStream(STREAMSEQ_STREAM_MASK, 4, 8, 1)
     }
     fn new_pcd_stream() -> Self {
-        StreamInfo::PcdStream(PCD_STREAM_MASK, 16, 32)
+        StreamInfo::PcdStream(PCD_STREAM_MASK, 16, 32, 1)
     }
     fn new_smi_group_index_stream() -> Self {
-        StreamInfo::SmiGroupIndexStream(SMI_GROUP_INDEX_MASK, 1, 1)
+        StreamInfo::SmiGroupIndexStream(SMI_GROUP_INDEX_MASK, 1, 1, 1)
     }
     fn new_fuzz_mem_switch_stream() -> Self {
-        StreamInfo::FuzzMemSwitchStream(FUZZ_MEM_ENABLE_MASK, 1, 1)
+        StreamInfo::FuzzMemSwitchStream(FUZZ_MEM_ENABLE_MASK, 1, 1, 1)
     }
     fn new_variable_stream() -> Self {
-        StreamInfo::VariableStream(VARIABLE_STREAM_MASK, 128, 256)
+        StreamInfo::VariableStream(VARIABLE_STREAM_MASK, 128, 256, 1)
     }
     fn get_id(&self) -> u128 {
         match self {
-            StreamInfo::IoStream(id, _, _) => id.clone(),
-            StreamInfo::DramStream(id, _, _) => id.clone(),
-            StreamInfo::CommBufStream(id, _, _) => id.clone(),
-            StreamInfo::MsrStream(id, _, _) => id.clone(),
-            StreamInfo::StreamSeqStream(id, _, _) => id.clone(),
-            StreamInfo::PcdStream(id, _, _) => id.clone(),
-            StreamInfo::SmiGroupIndexStream(id, _, _) => id.clone(),
-            StreamInfo::FuzzMemSwitchStream(id, _, _) => id.clone(),
-            StreamInfo::VariableStream(id, _, _) => id.clone(),
+            StreamInfo::IoStream(id, _, _, _) => id.clone(),
+            StreamInfo::DramStream(id, _, _, _) => id.clone(),
+            StreamInfo::CommBufStream(id, _, _, _) => id.clone(),
+            StreamInfo::MsrStream(id, _, _, _) => id.clone(),
+            StreamInfo::StreamSeqStream(id, _, _, _) => id.clone(),
+            StreamInfo::PcdStream(id, _, _, _) => id.clone(),
+            StreamInfo::SmiGroupIndexStream(id, _, _, _) => id.clone(),
+            StreamInfo::FuzzMemSwitchStream(id, _, _, _) => id.clone(),
+            StreamInfo::VariableStream(id, _, _, _) => id.clone(),
         }
     }
     fn get_init_len(&self) -> usize {
         match self {
-            StreamInfo::IoStream(_, init_len, _) => init_len.clone(),
-            StreamInfo::DramStream(_, init_len, _) => init_len.clone(),
-            StreamInfo::CommBufStream(_, init_len, _) => init_len.clone(),
-            StreamInfo::MsrStream(_, init_len, _) => init_len.clone(),
-            StreamInfo::StreamSeqStream(_, init_len, _) => init_len.clone(),
-            StreamInfo::PcdStream(_, init_len, _) => init_len.clone(),
-            StreamInfo::SmiGroupIndexStream(_, init_len, _) => init_len.clone(),
-            StreamInfo::FuzzMemSwitchStream(_, init_len, _) => init_len.clone(),
-            StreamInfo::VariableStream(_, init_len, _) => init_len.clone(),
+            StreamInfo::IoStream(_, init_len, _, _) => init_len.clone(),
+            StreamInfo::DramStream(_, init_len, _, _) => init_len.clone(),
+            StreamInfo::CommBufStream(_, init_len, _, _) => init_len.clone(),
+            StreamInfo::MsrStream(_, init_len, _, _) => init_len.clone(),
+            StreamInfo::StreamSeqStream(_, init_len, _, _) => init_len.clone(),
+            StreamInfo::PcdStream(_, init_len, _, _) => init_len.clone(),
+            StreamInfo::SmiGroupIndexStream(_, init_len, _, _) => init_len.clone(),
+            StreamInfo::FuzzMemSwitchStream(_, init_len, _, _) => init_len.clone(),
+            StreamInfo::VariableStream(_, init_len, _, _) => init_len.clone(),
         }
     }
     fn get_max_len(&self) -> usize {
         match self {
-            StreamInfo::IoStream(_, _, max_len) => max_len.clone(),
-            StreamInfo::DramStream(_, _, max_len) => max_len.clone(),
-            StreamInfo::CommBufStream(_, _, max_len) => max_len.clone(),
-            StreamInfo::MsrStream(_, _, max_len) => max_len.clone(),
-            StreamInfo::StreamSeqStream(_, _, max_len) => max_len.clone(),
-            StreamInfo::PcdStream(_, _, max_len) => max_len.clone(),
-            StreamInfo::SmiGroupIndexStream(_, _, max_len) => max_len.clone(),
-            StreamInfo::FuzzMemSwitchStream(_, _, max_len) => max_len.clone(),
-            StreamInfo::VariableStream(_, _, max_len) => max_len.clone(),
+            StreamInfo::IoStream(_, _, max_len, _) => max_len.clone(),
+            StreamInfo::DramStream(_, _, max_len, _) => max_len.clone(),
+            StreamInfo::CommBufStream(_, _, max_len, _) => max_len.clone(),
+            StreamInfo::MsrStream(_, _, max_len, _) => max_len.clone(),
+            StreamInfo::StreamSeqStream(_, _, max_len, _) => max_len.clone(),
+            StreamInfo::PcdStream(_, _, max_len, _) => max_len.clone(),
+            StreamInfo::SmiGroupIndexStream(_, _, max_len, _) => max_len.clone(),
+            StreamInfo::FuzzMemSwitchStream(_, _, max_len, _) => max_len.clone(),
+            StreamInfo::VariableStream(_, _, max_len, _) => max_len.clone(),
+        }  
+    }
+    fn get_weight(&self) -> u8 {
+        match self {
+            StreamInfo::IoStream(_, _, _, weight) => weight.clone(),
+            StreamInfo::DramStream(_, _, _, weight) => weight.clone(),
+            StreamInfo::CommBufStream(_, _, _, weight) => weight.clone(),
+            StreamInfo::MsrStream(_, _, _, weight) => weight.clone(),
+            StreamInfo::StreamSeqStream(_, _, _, weight) => weight.clone(),
+            StreamInfo::PcdStream(_, _, _, weight) => weight.clone(),
+            StreamInfo::SmiGroupIndexStream(_, _, _, weight) => weight.clone(),
+            StreamInfo::FuzzMemSwitchStream(_, _, _, weight) => weight.clone(),
+            StreamInfo::VariableStream(_, _, _, weight) => weight.clone(),
         }  
     }
 }
@@ -114,8 +127,8 @@ impl StreamInfo {
 pub enum StreamError {
     StreamNotFound(StreamInfo),
     StreamOutof(StreamInfo),
-    Unknown,
     LargeDatasize(u64),
+    Unknown,
 }
 impl fmt::Display for StreamError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -238,10 +251,16 @@ impl StreamInput{
             StreamInput::OldStream(_,_) => None,
         }
     }
-    pub fn get_append_stream(&self) -> Option<Vec<u8>> {
+    pub fn get_append_stream(&self) -> Vec<u8> {
         match self {
-            StreamInput::NewStream(_, _ , _, append_stream) => Some(append_stream.clone()),
-            StreamInput::OldStream(_,append_stream) => Some(append_stream.clone()),
+            StreamInput::NewStream(_, _ , _, append_stream) => append_stream.clone(),
+            StreamInput::OldStream(_,append_stream) => append_stream.clone(),
+        }
+    }
+    pub fn get_weight(&self) -> u8 {
+        match self {
+            StreamInput::NewStream(info, _, _,_) => info.get_weight(),
+            StreamInput::OldStream(_,_) => 0,
         }
     }
     pub fn append_new_data(&mut self, new_data : &Vec<u8>) {
@@ -469,6 +488,9 @@ impl StreamInputs {
     pub fn set_dram_value(&mut self, addr : u64, len : u64, data : &[u8]) {
         self.sparse_memory.write_bytes(addr, len, data);
     }
+    pub fn init_dram_value(&mut self, addr : u64, value : &Vec<u8>) {
+        self.sparse_memory.init_bytes(addr, value);
+    }
 
     pub fn generate_init_stream(&mut self, stream_info : StreamInfo) {
         let mut rng = rand::thread_rng();
@@ -484,7 +506,7 @@ impl StreamInputs {
         let mut append_data = vec![0u8; len]; 
         rng.fill(&mut append_data[..]);
 
-        let stream = self.inputs.get_mut(&stream_info.get_id()).unwrap();
+        let stream: &mut StreamInput = self.inputs.get_mut(&stream_info.get_id()).unwrap();
         stream.append_new_data(&append_data);
         append_data
     }
