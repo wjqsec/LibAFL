@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
+use log::*;
+use crate::exit_elegantly;
 
 const NUM_PAGE_BYTES_SHIFT : usize = 8;
 const NUM_PAGE_BYTES : usize = 1 << NUM_PAGE_BYTES_SHIFT;
@@ -155,29 +157,37 @@ impl SparseMemory {
             },  
         }
     }
-    fn init_byte(&mut self, addr : u64, value : u8) {
-        let mut base_addr  = addr & ADDR_MASK;
-        let offset = (addr - base_addr) as usize;
-        match self.memory.entry(base_addr) {
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                let (data, init) = entry.get_mut();
-                if !init[offset] {
-                    data[offset] = value;
-                    init[offset] = true;
-                }
-            },
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                let mut data = [0;NUM_PAGE_BYTES];
-                let mut init = [false;NUM_PAGE_BYTES];
-                data[offset] = value;
-                init[offset] = true;
-                entry.insert((data,init));
-            },
-        }
-    }
     pub fn init_bytes(&mut self, addr : u64, value : &Vec<u8>) {
-        for i in 0..value.len() {
-            self.init_byte(addr + i as u64, value[i]);
+        if value.len() > 16 {
+            error!("init bytes too much values");
+            exit_elegantly();
+        }
+        let mut val_idx = 0;
+        for i in 0..16 {
+            let process_addr = addr + i;
+            let mut base_addr  = process_addr & ADDR_MASK;
+            let offset = (process_addr - base_addr) as usize;
+            match self.memory.entry(base_addr) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    let (data, init) = entry.get_mut();
+                    if !init[offset] {
+                        data[offset] = value[val_idx];
+                        init[offset] = true;
+                        val_idx += 1;
+                    }
+                },
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    let mut data = [0;NUM_PAGE_BYTES];
+                    let mut init = [false;NUM_PAGE_BYTES];
+                    data[offset] = value[val_idx];
+                    init[offset] = true;
+                    entry.insert((data,init));
+                    val_idx += 1;
+                },
+            }
+            if val_idx == value.len() {
+                break;
+            }
         }
     }
 }

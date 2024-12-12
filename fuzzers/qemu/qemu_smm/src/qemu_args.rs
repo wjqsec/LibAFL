@@ -3,7 +3,7 @@ use std::string::*;
 use std::ffi::{CString, CStr};
 
 const OVMF_MODE : &str = "RELEASE";
-pub fn gen_ovmf_qemu_args() -> Vec<String>
+pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String) -> Vec<String>
 {
     vec![
         "qemu-system-x86_64".to_string(),
@@ -12,9 +12,9 @@ pub fn gen_ovmf_qemu_args() -> Vec<String>
         "-global".to_string(),
         "driver=cfi.pflash01,property=secure,value=on".to_string(),
         "-drive".to_string(),
-        format!("if=pflash,format=raw,unit=0,file=/home/w/hd/uefi_fuzz/fuzzer/edk2/Build/OvmfX64/{}_GCC5/FV/OVMF_CODE.fd,readonly=on",OVMF_MODE).to_string(),
+        format!("if=pflash,format=raw,unit=0,file={},readonly=on",ovmf_code_path).to_string(),
         "-drive".to_string(),
-        format!("if=pflash,format=raw,unit=1,file=/home/w/hd/uefi_fuzz/fuzzer/edk2/Build/OvmfX64/{}_GCC5/FV/OVMF_VARS.fd",OVMF_MODE).to_string(),
+        format!("if=pflash,format=raw,unit=1,file={}",ovmf_var_path).to_string(),
         "-hda".to_string(),
         "/home/w/hd/uefi_fuzz/fuzzer/run/smmfuzz.img".to_string(),
         "-debugcon".to_string(),
@@ -24,7 +24,6 @@ pub fn gen_ovmf_qemu_args() -> Vec<String>
         "-L".to_string(),
         "/usr/local/share/qemu_smm/".to_string(),
         "-nographic".to_string(),
-
     ]
 }
 pub fn get_snapshot_dev_filter_list() -> Vec<String>    
@@ -47,7 +46,7 @@ pub fn get_snapshot_dev_filter_list() -> Vec<String>
         // CString::new("dma").unwrap().into_string().unwrap(),
         // CString::new("mc146818rtc").unwrap().into_string().unwrap(),
 
-        CString::new("0000:00:1f.0/ICH9LPC").unwrap().into_string().unwrap(),
+        // CString::new("0000:00:1f.0/ICH9LPC").unwrap().into_string().unwrap(),
 
         // CString::new("i8259").unwrap().into_string().unwrap(),
         // CString::new("i8259").unwrap().into_string().unwrap(),

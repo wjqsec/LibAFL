@@ -67,7 +67,7 @@ impl StreamInfo {
         StreamInfo::FuzzMemSwitchStream(FUZZ_MEM_ENABLE_MASK, 1, 1, 1)
     }
     fn new_variable_stream() -> Self {
-        StreamInfo::VariableStream(VARIABLE_STREAM_MASK, 128, 256, 1)
+        StreamInfo::VariableStream(VARIABLE_STREAM_MASK, 8192, 16348, 1)
     }
     fn get_id(&self) -> u128 {
         match self {
@@ -126,7 +126,7 @@ impl StreamInfo {
 #[derive(Debug)]
 pub enum StreamError {
     StreamNotFound(StreamInfo),
-    StreamOutof(StreamInfo),
+    StreamOutof(StreamInfo, usize),
     LargeDatasize(u64),
     Unknown,
 }
@@ -134,7 +134,7 @@ impl fmt::Display for StreamError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             StreamError::StreamNotFound(info) => write!(f, "Stream with ID {:#x} not found", info.get_id()),
-            StreamError::StreamOutof(info) => write!(f, "Stream with ID {:#x} ran out of data", info.get_id()),
+            StreamError::StreamOutof(info,_) => write!(f, "Stream with ID {:#x} ran out of data", info.get_id()),
             StreamError::Unknown => write!(f, "Stream error Unknown"),
             StreamError::LargeDatasize(size) => write!(f, "Stream error LargeDatasize {}",size),
         }
@@ -301,7 +301,7 @@ impl StreamInputs {
                     return Ok(fuzz_input_ptr);
                 }
                 else {
-                    return Err(StreamError::StreamOutof(stream_info));
+                    return Err(StreamError::StreamOutof(stream_info, len as usize));
                 }
             },
             std::collections::btree_map::Entry::Vacant(entry) => { 
@@ -317,7 +317,7 @@ impl StreamInputs {
                     return Ok(fuzz_input_ptr);
                 }
                 else {
-                    return Err(StreamError::StreamOutof(stream_info));
+                    return Err(StreamError::StreamOutof(stream_info, 8));
                 }
             },
             std::collections::btree_map::Entry::Vacant(entry) => { 
@@ -351,7 +351,7 @@ impl StreamInputs {
                         return Err(StreamError::Unknown);
                     }
                 } else {
-                    return Err(StreamError::StreamOutof(stream_info));
+                    return Err(StreamError::StreamOutof(stream_info, 8));
                 }
             },
             std::collections::btree_map::Entry::Vacant(entry) => { 
@@ -370,7 +370,7 @@ impl StreamInputs {
                     return Ok(fuzz_input_ptr);
                 }
                 else {
-                    return Err(StreamError::StreamOutof(stream_info));
+                    return Err(StreamError::StreamOutof(stream_info, len as usize));
                 }
             },
             std::collections::btree_map::Entry::Vacant(entry) => { 
@@ -378,63 +378,72 @@ impl StreamInputs {
             },
         }
     }
-    pub fn get_dram_fuzz_data(&mut self, addr : u64, len : u64, consistent : bool) -> Result<u64, StreamError> {
+    fn get_unconsistent_dram_fuzz_data(&mut self, addr : u64, len : u64) -> Result<u64, StreamError> {
         if len > 8 {
             return Err(StreamError::LargeDatasize(len));
         }
         let stream_info = StreamInfo::new_dram_stream();
-        if consistent {
-            match self.sparse_memory.read_bytes(addr, len) {
-                Ok(data) => {
+        match self.inputs.entry(stream_info.get_id()) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                if let Some(fuzz_input_ptr) = entry.get_mut().get_input_len_ptr(len as usize) {
+                    let mut data : u64 = 0;
+                    for i in 0..(len as usize) {
+                        data = (data << 8) | unsafe { (*fuzz_input_ptr.add(i)) as u64 };
+                    }
                     return Ok(data);
-                },
-                Err(err) => {
-                    if let DramError::Uninit(uninit_addrs) = err {
-                        match self.inputs.entry(stream_info.get_id()) {
-                            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                                if let Some(mut fuzz_input_ptr) = entry.get_mut().get_input_len_ptr(uninit_addrs.len()) {
-                                    for uninit_addr in uninit_addrs {
-                                        self.sparse_memory.write_byte(uninit_addr, unsafe { fuzz_input_ptr.read() });
-                                        fuzz_input_ptr = unsafe { fuzz_input_ptr.add(1) };
-                                    }
-                                    if let Ok(data) = self.sparse_memory.read_bytes(addr, len) {
-                                        return Ok(data);
-                                    } else {
-                                        return Err(StreamError::Unknown);
-                                    }
-                                }
-                                else {
-                                    return Err(StreamError::StreamOutof(stream_info));
-                                }
-                            },
-                            std::collections::btree_map::Entry::Vacant(entry) => { 
-                                return Err(StreamError::StreamNotFound(stream_info));
-                            },
-                        }
-                    }
-                    return Err(StreamError::Unknown);
-                },
-            }
-        } else {
-            match self.inputs.entry(stream_info.get_id()) {
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    if let Some(fuzz_input_ptr) = entry.get_mut().get_input_len_ptr(len as usize) {
-                        let mut data : u64 = 0;
-                        for i in 0..(len as usize) {
-                            data = (data << 8) | unsafe { (*fuzz_input_ptr.add(i)) as u64 };
-                        }
-                        return Ok(data);
-                    }
-                    else {
-                        return Err(StreamError::StreamOutof(stream_info));
-                    }
-                },
-                std::collections::btree_map::Entry::Vacant(entry) => { 
-                    return Err(StreamError::StreamNotFound(stream_info));
-                },
-            }
+                }
+                else {
+                    return Err(StreamError::StreamOutof(stream_info, len as usize));
+                }
+            },
+            std::collections::btree_map::Entry::Vacant(entry) => { 
+                return Err(StreamError::StreamNotFound(stream_info));
+            },
         }
-        
+    }
+    fn get_consistent_dram_fuzz_data(&mut self, addr : u64, len : u64) -> Result<u64, StreamError> {
+        if len > 8 {
+            return Err(StreamError::LargeDatasize(len));
+        }
+        let stream_info = StreamInfo::new_dram_stream();
+        match self.sparse_memory.read_bytes(addr, len) {
+            Ok(data) => {
+                return Ok(data);
+            },
+            Err(err) => {
+                if let DramError::Uninit(uninit_addrs) = err {
+                    match self.inputs.entry(stream_info.get_id()) {
+                        std::collections::btree_map::Entry::Occupied(mut entry) => {
+                            if let Some(mut fuzz_input_ptr) = entry.get_mut().get_input_len_ptr(uninit_addrs.len()) {
+                                for uninit_addr in uninit_addrs {
+                                    self.sparse_memory.write_byte(uninit_addr, unsafe { fuzz_input_ptr.read() });
+                                    fuzz_input_ptr = unsafe { fuzz_input_ptr.add(1) };
+                                }
+                                if let Ok(data) = self.sparse_memory.read_bytes(addr, len) {
+                                    return Ok(data);
+                                } else {
+                                    return Err(StreamError::Unknown);
+                                }
+                            }
+                            else {
+                                return Err(StreamError::StreamOutof(stream_info, uninit_addrs.len()));
+                            }
+                        },
+                        std::collections::btree_map::Entry::Vacant(entry) => { 
+                            return Err(StreamError::StreamNotFound(stream_info));
+                        },
+                    }
+                }
+                return Err(StreamError::Unknown);
+            },
+        }
+    }
+    pub fn get_dram_fuzz_data(&mut self, addr : u64, len : u64, consistent : bool) -> Result<u64, StreamError> {
+        if consistent {
+            self.get_consistent_dram_fuzz_data(addr, len)
+        } else {
+            self.get_unconsistent_dram_fuzz_data(addr, len)
+        }
     }
 
     pub fn get_fuzz_mem_switch_fuzz_data(&mut self) -> Result<u8, StreamError> {
@@ -445,7 +454,7 @@ impl StreamInputs {
                     return Ok(unsafe {*fuzz_input_ptr});
                 }
                 else {
-                    return Err(StreamError::StreamOutof(stream_info));
+                    return Err(StreamError::StreamOutof(stream_info, 1));
                 }
             },
             std::collections::btree_map::Entry::Vacant(entry) => { 
@@ -461,7 +470,7 @@ impl StreamInputs {
                     return Ok(fuzz_input_ptr);
                 }
                 else {
-                    return Err(StreamError::StreamOutof(stream_info));
+                    return Err(StreamError::StreamOutof(stream_info, len as usize));
                 }
             },
             std::collections::btree_map::Entry::Vacant(entry) => { 
@@ -477,7 +486,7 @@ impl StreamInputs {
                     return Ok(unsafe { *fuzz_input_ptr });
                 }
                 else {
-                    return Err(StreamError::StreamOutof(stream_info));
+                    return Err(StreamError::StreamOutof(stream_info, 1));
                 }
             },
             std::collections::btree_map::Entry::Vacant(entry) => { 
@@ -501,7 +510,7 @@ impl StreamInputs {
         self.inputs.insert(tmp.get_id().unwrap(), tmp);
     }
 
-    pub fn append_temp_stream_data(&mut self, stream_info : StreamInfo, len : usize) -> Vec<u8> {
+    pub fn append_temp_stream(&mut self, stream_info : StreamInfo, len : usize) -> Vec<u8> {
         let mut rng = rand::thread_rng();
         let mut append_data = vec![0u8; len]; 
         rng.fill(&mut append_data[..]);

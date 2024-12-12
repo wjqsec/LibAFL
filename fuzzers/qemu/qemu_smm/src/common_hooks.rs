@@ -9,7 +9,6 @@ use std::sync::{Arc, Mutex};
 use std::vec::*;
 use std::slice;
 use std::cmp::min;
-use crate::config::*;
 use crate::smm_fuzz_qemu_cmds::*;
 
 pub static mut IN_FUZZ : bool = false;
@@ -85,10 +84,10 @@ fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut 
                         }
                     }
                 },
-                StreamError::StreamOutof(id) => {
-                    let append_data = fuzz_input.append_temp_stream_data(id, size);
+                StreamError::StreamOutof(id, need_len) => {
+                    let append_data = fuzz_input.append_temp_stream(id, need_len);
                     unsafe {
-                        data.copy_from(append_data.as_ptr(), size);
+                        data.copy_from(append_data.as_ptr(), need_len);
                         NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
                     }
                 },
@@ -219,21 +218,30 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
                                 }
                             }
                         },
-                        StreamError::StreamOutof(id) => {
-                            let append_data = fuzz_input.append_temp_stream_data(id, size as usize);
-                            fuzz_input.init_dram_value(addr, &append_data);
-                            match fuzz_input.get_dram_fuzz_data(addr, size, consistent_access) {
-                                Ok(data) => { 
-                                    unsafe { 
-                                        *DUMMY_MEMORY_HOST_PTR = data;
-                                        *out_addr = DUMMY_MEMORY_VIRT_ADDR;
-                                        NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
-                                    }
-                                },
-                                _ => {
-                                    error!("dram fuzz data append error");
-                                },
+                        StreamError::StreamOutof(id, need_len) => {
+                            let append_data = fuzz_input.append_temp_stream(id, need_len);
+                            if consistent_access {
+                                fuzz_input.init_dram_value(addr, &append_data);
+                                match fuzz_input.get_dram_fuzz_data(addr, size, consistent_access) {
+                                    Ok(data) => { 
+                                        unsafe { 
+                                            *DUMMY_MEMORY_HOST_PTR = data;
+                                            *out_addr = DUMMY_MEMORY_VIRT_ADDR;
+                                            NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+                                        }
+                                    },
+                                    _ => {
+                                        error!("dram fuzz data append error");
+                                        exit_elegantly();
+                                    },
+                                }
+                            } else {
+                                unsafe {
+                                    (DUMMY_MEMORY_HOST_PTR as *mut u8).copy_from(append_data.as_ptr(), need_len);
+                                    *out_addr = DUMMY_MEMORY_VIRT_ADDR;
+                                }
                             }
+                            
                         },
                         _ => {
                             error!("dram fuzz data get error");
@@ -294,8 +302,8 @@ pub fn set_fuzz_mem_switch(fuzz_input : &mut StreamInputs) {
                         }
                     }
                 },
-                StreamError::StreamOutof(id) => {
-                    let append_data = fuzz_input.append_temp_stream_data(id, 1);
+                StreamError::StreamOutof(id, need_len) => {
+                    let append_data = fuzz_input.append_temp_stream(id, need_len);
                     if append_data[0] & 1 == 1 {
                         unsafe { MEM_SHOULD_FUZZ_SWITCH = true; }
                     }
@@ -375,9 +383,9 @@ fn rdmsr_common(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fuzz_input : &
                         }
                     }
                 },
-                StreamError::StreamOutof(id) => {
+                StreamError::StreamOutof(id, need_len) => {
                     unsafe {
-                        let append_data = fuzz_input.append_temp_stream_data(id, 8);
+                        let append_data = fuzz_input.append_temp_stream(id, need_len);
                         out_eax.copy_from(append_data.as_ptr() as *const u32, 1); 
                         out_edx.copy_from((append_data.as_ptr() as *const u32).offset(1), 1);
                         NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
@@ -417,7 +425,7 @@ pub fn rdmsr_smm_fuzz_phase(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fu
 
 static mut SKIP_CURRENT_MODULE : bool = false;
 pub fn skip() {
-    info!("unable to process, skip");
+    warn!("unable to process, skip");
     unsafe {
         SKIP_CURRENT_MODULE = true;
     }
@@ -499,8 +507,10 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_COMMBUF_FUZZ_DATA => {
+            let smi_index = arg1;
+            let smi_invoke_times = arg2;
             if unsafe { IN_FUZZ } {
-                match fuzz_input.get_commbuf_fuzz_data(arg1, arg2) {
+                match fuzz_input.get_commbuf_fuzz_data(smi_index, smi_invoke_times) {
                     Ok((fuzz_input_ptr,  claimed_len, actual_len)) => { 
                         let written_len = min(unsafe {COMMBUF_SIZE} as usize, actual_len);
                         unsafe { COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, written_len); }
@@ -510,7 +520,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                         match io_err {
                             StreamError::StreamNotFound(id) => {
                                 fuzz_input.generate_init_stream(id);
-                                match fuzz_input.get_commbuf_fuzz_data(arg1, arg2) {
+                                match fuzz_input.get_commbuf_fuzz_data(smi_index, smi_invoke_times) {
                                     Ok((fuzz_input_ptr, claimed_len, actual_len)) => { 
                                         let written_len = min(unsafe {COMMBUF_SIZE} as usize, actual_len);
                                         unsafe { COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, written_len); }
@@ -532,10 +542,11 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_PCD_FUZZ_DATA => {
+            let len = arg1;
             if unsafe { IN_FUZZ } {
-                match fuzz_input.get_pcd_fuzz_data(arg1) {
+                match fuzz_input.get_pcd_fuzz_data(len) {
                     Ok((fuzz_input_ptr)) => { 
-                        ret = match arg1 {
+                        ret = match len {
                             1 => unsafe {*fuzz_input_ptr as u64},
                             _ => 0,
                         };
@@ -544,9 +555,9 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                         match io_err {
                             StreamError::StreamNotFound(id) => {
                                 fuzz_input.generate_init_stream(id);
-                                match fuzz_input.get_pcd_fuzz_data(arg1) {
+                                match fuzz_input.get_pcd_fuzz_data(len) {
                                     Ok((fuzz_input_ptr)) => { 
-                                        ret = match arg1 {
+                                        ret = match len {
                                             1 => unsafe { *fuzz_input_ptr as u64 },
                                             _ => 0,
                                         };
@@ -557,9 +568,9 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                     }
                                 }
                             },
-                            StreamError::StreamOutof(id) => {
-                                let append_data = fuzz_input.append_temp_stream_data(id, arg1 as usize);
-                                ret = match arg1 {
+                            StreamError::StreamOutof(id, need_len) => {
+                                let append_data = fuzz_input.append_temp_stream(id, need_len);
+                                ret = match need_len {
                                     1 => append_data[0] as u64,
                                     _ => 0,
                                 };
@@ -592,35 +603,37 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_VARIABLE_FUZZ_DATA => {
+            let var_size = arg2;
             let variable_phy_addr = cpu.get_phys_addr_with_offset(arg1).unwrap();
             let variable_host_addr = cpu.get_host_addr(variable_phy_addr);
+            
             if unsafe { IN_FUZZ } {
-                match fuzz_input.get_variable_fuzz_data(arg2) {
+                match fuzz_input.get_variable_fuzz_data(var_size) {
                     Ok((fuzz_input_ptr)) => { 
                         unsafe {
-                            variable_host_addr.copy_from(fuzz_input_ptr, arg2 as usize);
+                            variable_host_addr.copy_from(fuzz_input_ptr, var_size as usize);
                         }
                     },
                     Err(io_err) => {    
                         match io_err {
                             StreamError::StreamNotFound(id) => {
                                 fuzz_input.generate_init_stream(id);
-                                match fuzz_input.get_variable_fuzz_data(arg2) {
+                                match fuzz_input.get_variable_fuzz_data(var_size) {
                                     Ok((fuzz_input_ptr)) => { 
                                         unsafe {
-                                            variable_host_addr.copy_from(fuzz_input_ptr, arg2 as usize);
+                                            variable_host_addr.copy_from(fuzz_input_ptr, var_size as usize);
                                         }
                                     },
                                     _ => {    
-                                        error!("variable data generate error, request too much variable data");
+                                        error!("variable data generate error, request too much variable data {:}",var_size);
                                         exit_elegantly();
                                     }
                                 }
                             },
-                            StreamError::StreamOutof(id) => {
-                                let append_data = fuzz_input.append_temp_stream_data(id, arg1 as usize);
+                            StreamError::StreamOutof(id, need_len) => {
+                                let append_data = fuzz_input.append_temp_stream(id, need_len);
                                 unsafe {
-                                    variable_host_addr.copy_from(append_data.as_ptr(), arg2 as usize);
+                                    variable_host_addr.copy_from(append_data.as_ptr(), need_len);
                                 }
                             },
                             _ => {
@@ -652,8 +665,8 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                     }
                                 }
                             },
-                            StreamError::StreamOutof(id) => {
-                                let append_data = fuzz_input.append_temp_stream_data(id, 1);
+                            StreamError::StreamOutof(id, need_len) => {
+                                let append_data = fuzz_input.append_temp_stream(id, need_len);
                                 ret = append_data[0] as u64;
                             },
                             _ => {
