@@ -11,6 +11,8 @@ use std::slice;
 use std::cmp::min;
 use crate::smm_fuzz_qemu_cmds::*;
 
+pub static mut IN_SMI_FUZZ_PHASE : bool = false;
+
 pub static mut IN_FUZZ : bool = false;
 
 pub static mut IN_SMI : bool = false;
@@ -33,10 +35,21 @@ static mut COMMBUF_HOST_PTR : *mut u8 = 0 as *mut u8;
 static mut HOB_ADDR : u64 = 0;
 static mut HOB_SIZE : u64 = 0;
 
-static mut NUM_BBL_DEBUG_TRACE : u64 = 0;
-pub fn start_debug_trace(num_bbl : u64) {
+static mut DEBUG_TRACE_ENABLE : bool = false;
+pub fn enable_debug_trace() {
     unsafe {
-        NUM_BBL_DEBUG_TRACE = num_bbl;
+        if !IN_SMI_FUZZ_PHASE {
+            return;
+        }
+        DEBUG_TRACE_ENABLE = true;
+    }
+}
+pub fn disable_debug_trace() {
+    unsafe {
+        if !IN_SMI_FUZZ_PHASE {
+            return;
+        }
+        DEBUG_TRACE_ENABLE = false;
     }
 }
 
@@ -596,11 +609,13 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             unsafe {
                 IN_SMI = true;
             }
+            enable_debug_trace();
         },
         LIBAFL_QEMU_COMMAND_SMM_SMI_EXIT => {
             unsafe {
                 IN_SMI = false;
             }
+            disable_debug_trace();
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_VARIABLE_FUZZ_DATA => {
             let var_size = arg2;
@@ -704,7 +719,29 @@ pub fn set_num_timeout_bbl(bbl : u64) {
 
 
 pub fn bbl_common(cpu : CPU) {
-    #[cfg(feature = "debug_trace")]
+    unsafe {
+        match NEXT_EXIT {
+            Some(SmmQemuExit::StreamNotFound) => {
+                NEXT_EXIT = None;
+                cpu.exit_stream_notfound();
+            },
+            Some(SmmQemuExit::StreamOutof) => {
+                NEXT_EXIT = None;
+                cpu.exit_stream_outof();
+            }
+            _ => {
+            }
+        } 
+    }
+
+    if get_exec_count() > unsafe { NUM_TIMEOUT_BBL } {
+        cpu.exit_timeout();
+    }
+    set_exec_count(get_exec_count() + 1);
+}
+
+pub fn bbl_debug(cpu : CPU) {
+    if unsafe {DEBUG_TRACE_ENABLE == true}
     {
         let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
         let rax : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
@@ -713,13 +750,7 @@ pub fn bbl_common(cpu : CPU) {
         let rdx : GuestReg = cpu.read_reg(Regs::Rdx).unwrap();
         let rsi : GuestReg = cpu.read_reg(Regs::Rsi).unwrap();
         let rdi : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
-        unsafe {
-            if NUM_BBL_DEBUG_TRACE > 0 {
-                info!("bbl-> {} pc:{pc:#x} rax:{rax:#x} rbx:{rbx:#x} rcx:{rcx:#x} rdx:{rdx:#x} rsi:{rsi:#x} rdi:{rdi:#x}",get_exec_count());
-                NUM_BBL_DEBUG_TRACE -= 1;
-            }  
-        }
-        
+        info!("bbl-> {} pc:{pc:#x} rax:{rax:#x} rbx:{rbx:#x} rcx:{rcx:#x} rdx:{rdx:#x} rsi:{rsi:#x} rdi:{rdi:#x}",get_exec_count());
     }
     unsafe {
         match NEXT_EXIT {

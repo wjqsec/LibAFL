@@ -7,12 +7,14 @@ mod init_fuzz_phase;
 mod smm_fuzz_phase;
 mod stream_input;
 mod common_hooks;
+mod cmd;
 mod qemu_control;
 mod fuzzer_snapshot;
 mod smm_fuzz_qemu_cmds;
 use core::{ptr::addr_of_mut, time::Duration};
 use std::cell::UnsafeCell;
 use std::process::exit;
+use std::str::FromStr;
 use std::{path::PathBuf, process};
 use log::*;
 use clap::Parser;
@@ -53,9 +55,10 @@ use libafl_qemu::FastSnapshotPtr;
 use crate::stream_input::*;
 use crate::qemu_args::*;
 use crate::common_hooks::*;
+use crate::cmd::*;
 use crate::exit_qemu::*;
 use crate::fuzzer_snapshot::*;
-use crate::smm_fuzz_phase::{smm_phase_fuzz, smm_phase_run_corpus, smm_phase_run_one};
+use crate::smm_fuzz_phase::{smm_phase_fuzz, smm_phase_run};
 use init_fuzz_phase::{init_phase_fuzz, init_phase_run};
 use std::io::{self, Write};
 use std::thread;
@@ -86,11 +89,6 @@ fn main() {
     env_logger::init();
     let args = Args::parse();
 
-    let tmp_path = Path::new("/tmp/smifuzz/");
-    if !tmp_path.exists() {
-        fs::create_dir_all(tmp_path.clone()).unwrap();
-    }
-
     let project_path = Path::new(args.proj.as_str());
     if !project_path.exists() {
         fs::create_dir_all(project_path.clone()).unwrap();
@@ -111,13 +109,15 @@ fn main() {
         fs::create_dir_all(crash_path.clone()).unwrap();
     }
 
-
+    
     if args.cmd == "fuzz" {
         fuzz((args.ovmf_code, args.ovmf_var), &seed_path, &corpus_path, &crash_path);
     } else if args.cmd == "run_one" {
-        run_smi_input((args.ovmf_code, args.ovmf_var), &corpus_path, &tmp_path.to_path_buf(), args.smi_input.unwrap());
+        let run_mode = RunMode::RunTestcase(PathBuf::from_str(args.smi_input.unwrap().as_str()).unwrap());
+        run_smi((args.ovmf_code, args.ovmf_var), &corpus_path,run_mode);
     } else if args.cmd == "run_corpus" {
-        run_smi_corpus((args.ovmf_code, args.ovmf_var), &corpus_path, &tmp_path.to_path_buf());
+        let run_mode = RunMode::RunTestcase(PathBuf::from_str(args.smi_input.unwrap().as_str()).unwrap());
+        run_smi((args.ovmf_code, args.ovmf_var), &corpus_path,run_mode);
     }
 }
 
@@ -289,13 +289,13 @@ fn fuzz(ovmf_file_path : (String, String), seed_path : &PathBuf, corpus_path : &
 }
 
 
-fn run_smi_input(ovmf_file_path : (String, String), corpus_path : &PathBuf, tmp_path : &PathBuf, input_file : String) {
+fn run_smi(ovmf_file_path : (String, String), corpus_path : &PathBuf, run_mode : RunMode) {
 
     let args: Vec<String> = gen_ovmf_qemu_args(&ovmf_file_path.0, &ovmf_file_path.1);
     let env: Vec<(String, String)> = env::vars().collect();
     let qemu: Qemu = Qemu::init(args.as_slice(),env.as_slice()).unwrap();
     let mut emulator  = Emulator::new_with_qemu(qemu,
-        tuple_list!(EdgeCoverageModule::default(), CmpLogModule::default()),
+        tuple_list!(),
         NopEmulatorExitHandler,
         NopCommandManager)
         .unwrap();
@@ -329,7 +329,7 @@ fn run_smi_input(ovmf_file_path : (String, String), corpus_path : &PathBuf, tmp_
     
     let mut block_id = emulator.modules_mut().blocks(Hook::Function(gen_hashed_block_ids::<_, _>), Hook::Empty, 
     Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
-        bbl_common(modules.qemu().first_cpu().unwrap()); 
+        bbl_debug(modules.qemu().first_cpu().unwrap()); 
     })));
     let mut devread_id : PostDeviceregReadHookId = emulator.modules_mut().devread(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32| {
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
@@ -358,7 +358,7 @@ fn run_smi_input(ovmf_file_path : (String, String), corpus_path : &PathBuf, tmp_
             },
             SnapshotKind::StartOfSmmInitSnap(snap) => {
                 let corpus_dir = get_init_phase_corpus_dir(module_index, corpus_path);
-                snapshot = init_phase_run(tmp_path.clone(), corpus_dir, &mut emulator); 
+                snapshot = init_phase_run(corpus_dir, &mut emulator); 
                 snap.delete(qemu);
                 module_index += 1;
                 info!("passed one module");
@@ -400,119 +400,5 @@ fn run_smi_input(ovmf_file_path : (String, String), corpus_path : &PathBuf, tmp_
     })));
 
     
-    smm_phase_run_one(tmp_path.clone(), input_file, &mut emulator);
-}
-
-fn run_smi_corpus(ovmf_file_path : (String, String), corpus_path : &PathBuf, tmp_path : &PathBuf) {
-
-    let args: Vec<String> = gen_ovmf_qemu_args(&ovmf_file_path.0, &ovmf_file_path.1);
-    let env: Vec<(String, String)> = env::vars().collect();
-    let qemu: Qemu = Qemu::init(args.as_slice(),env.as_slice()).unwrap();
-    let mut emulator  = Emulator::new_with_qemu(qemu,
-        tuple_list!(EdgeCoverageModule::default(), CmpLogModule::default()),
-        NopEmulatorExitHandler,
-        NopCommandManager)
-        .unwrap();
-    let cpu = qemu.first_cpu().unwrap();
-    
-    let backdoor_id = emulator.modules_mut().backdoor(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, addr : GuestAddr| {
-        let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
-        backdoor_common(fuzz_input, modules.qemu().first_cpu().unwrap());
-    })));
-
-    let mut snapshot = SnapshotKind::None;
-    unsafe {
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),10000000,false, false);
-        if let Ok(qemu_exit_reason) = qemu_exit_reason {
-            if let QemuExitReason::SyncExit = qemu_exit_reason  {
-                if cmd == LIBAFL_QEMU_COMMAND_END {  // sync exit
-                    if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_START {
-                        set_current_module(arg1, arg2);
-                        snapshot = SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
-                    }
-                }
-            }
-        }
-    }
-    if let SnapshotKind::None = snapshot {
-        error!("first breakpoint hit strange place");
-        exit_elegantly();
-    }
-    info!("first breakpoint hit");
-
-    
-    let mut block_id = emulator.modules_mut().blocks(Hook::Function(gen_hashed_block_ids::<_, _>), Hook::Empty, 
-    Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
-        bbl_common(modules.qemu().first_cpu().unwrap()); 
-    })));
-    let mut devread_id : PostDeviceregReadHookId = emulator.modules_mut().devread(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32| {
-        let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
-        post_io_read_init_fuzz_phase(base , offset ,size , data , handled,fuzz_input ,modules.qemu().first_cpu().unwrap());
-    })));
-    // let mut devwrite_id : PreDeviceregWriteHookId = emulator.modules_mut().devwrite(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool| {
-    //     pre_io_write_init_fuzz_phase(base, offset,size , data , handled, modules.qemu().first_cpu().unwrap());
-    // })));
-    let mut memrw_id = emulator.modules_mut().memrw(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr, rw : u32 , value : u128| {
-        let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
-        pre_memrw_init_fuzz_phase(pc, addr, size, out_addr,rw, value, fuzz_input, modules.qemu().first_cpu().unwrap());
-    })));
-    
-
-    let mut module_index = 0;
-    loop {
-        // fuzz module init function one by one
-        match snapshot {
-            SnapshotKind::None => {   // we fail, start from the very begining.
-                error!("got None"); 
-                exit_elegantly();
-            },
-            SnapshotKind::StartOfUefiSnap(_) => { 
-                error!("got StartOfUefi"); 
-                exit_elegantly();
-            },
-            SnapshotKind::StartOfSmmInitSnap(snap) => {
-                let corpus_dir = get_init_phase_corpus_dir(module_index, corpus_path);
-                snapshot = init_phase_run(tmp_path.clone(), corpus_dir, &mut emulator); 
-                snap.delete(qemu);
-                module_index += 1;
-                info!("passed one module");
-            },
-            SnapshotKind::EndOfSmmInitSnap(_) => { 
-                error!("got EndOfSmmInitSnap"); 
-                exit_elegantly();
-            },
-            SnapshotKind::StartOfSmmModuleSnap(snap) => { 
-                info!("passed all modules");
-                break;
-            },
-            SnapshotKind::StartOfSmmFuzzSnap(_) => { 
-                error!("got StartOfSmmFuzzSnap"); 
-                exit_elegantly();
-            },
-        };
-    }
-
-    devread_id.remove(true);
-    // devwrite_id.remove(true);
-    memrw_id.remove(true);
-
-
-    let mut devread_id : PostDeviceregReadHookId = emulator.modules_mut().devread(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32| {
-        let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
-        post_io_read_smm_fuzz_phase(base , offset ,size , data , handled,fuzz_input ,modules.qemu().first_cpu().unwrap());
-    })));
-    // let mut devwrite_id : PreDeviceregWriteHookId = emulator.modules_mut().devwrite(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool| {
-    //     pre_io_write_smm_fuzz_phase(base, offset,size , data , handled, modules.qemu().first_cpu().unwrap());
-    // })));
-    let mut memrw_id = emulator.modules_mut().memrw(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr, rw : u32 , value : u128| {
-        let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
-        pre_memrw_smm_fuzz_phase(pc, addr, size, out_addr,rw, value, fuzz_input, modules.qemu().first_cpu().unwrap());
-    })));
-    let rdmsr_id = emulator.modules_mut().rdmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32| {
-        let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
-        rdmsr_smm_fuzz_phase(in_ecx, out_eax, out_edx, fuzz_input);
-    })));
-
-    let smi_corpus = get_smi_fuzz_phase_dirs(corpus_path);
-    smm_phase_run_corpus(tmp_path.clone(), smi_corpus.clone(), &mut emulator);
+    smm_phase_run(run_mode, &mut emulator);
 }

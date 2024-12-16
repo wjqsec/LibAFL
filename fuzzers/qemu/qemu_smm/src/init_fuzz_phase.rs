@@ -8,7 +8,7 @@ use log::*;
 use std::ptr;
 use rand::Rng;
 use libafl::{
-    corpus::Corpus,Error, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{AflMapFeedback, CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, CachedOnDiskCorpus, PowerQueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
+    corpus::Corpus,Error, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{AflMapFeedback, CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, OnDiskCorpus, CachedOnDiskCorpus, InMemoryCorpus, PowerQueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
 };
 use libafl_bolts::tuples::MatchNameRef;
 use libafl::feedbacks::stream::StreamFeedback;
@@ -90,7 +90,7 @@ fn try_run_without_fuzz(qemu : Qemu) -> SnapshotKind {
     return SnapshotKind::None;
 }
 
-pub fn init_phase_fuzz(seed_dirs : [PathBuf;1], corpus_dir : PathBuf, objective_dir : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, (CmpLogModule, ())), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>) -> SnapshotKind 
+pub fn init_phase_fuzz(seed_dirs : [PathBuf;1], corpus_dir : PathBuf, objective_dir : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, (CmpLogModule, ())), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, OnDiskCorpus<MultipartInput<BytesInput>>>>) -> SnapshotKind 
 {
     let qemu = emulator.qemu();
     let cpu = qemu.first_cpu().unwrap();
@@ -219,7 +219,7 @@ pub fn init_phase_fuzz(seed_dirs : [PathBuf;1], corpus_dir : PathBuf, objective_
     let mut state = StdState::new(
         StdRand::with_seed(current_nanos()),
         CachedOnDiskCorpus::<MultipartInput<BytesInput>>::new(corpus_dir.clone(),10 * 4096).unwrap(),
-        CachedOnDiskCorpus::<MultipartInput<BytesInput>>::new(objective_dir.clone(),10 * 4096).unwrap(),
+        OnDiskCorpus::<MultipartInput<BytesInput>>::new(objective_dir.clone()).unwrap(),
         &mut feedback,
         // Same for objective feedbacks
         &mut objective,
@@ -327,7 +327,7 @@ pub fn init_phase_fuzz(seed_dirs : [PathBuf;1], corpus_dir : PathBuf, objective_
 
 
 
-pub fn init_phase_run(tmp_dir : PathBuf, corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, (CmpLogModule, ())), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, CachedOnDiskCorpus<MultipartInput<BytesInput>>>>) -> SnapshotKind 
+pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (), StdState<MultipartInput<BytesInput>, InMemoryCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, InMemoryCorpus<MultipartInput<BytesInput>>>>) -> SnapshotKind 
 {
     let qemu = emulator.qemu();
     let cpu = qemu.first_cpu().unwrap();
@@ -441,20 +441,18 @@ pub fn init_phase_run(tmp_dir : PathBuf, corpus_dir : PathBuf, emulator: &mut Em
     };
     let time_observer = TimeObserver::new("time");
     let stream_observer = StreamObserver::new("stream", unsafe {Arc::clone(&STREAM_FEEDBACK)});
-    let cmplog_observer = CmpLogObserver::new("cmplog", true);
     let mut feedback = feedback_or!(
         MaxMapFeedback::new(&edges_observer),
         TimeFeedback::new(&time_observer),
         StreamFeedback::new(&stream_observer),
     );
-    
     // A feedback to choose if an input is a solution or not
     let mut objective = CrashFeedback::new();
 
     let mut state = StdState::new(
         StdRand::with_seed(current_nanos()),
-        CachedOnDiskCorpus::<MultipartInput<BytesInput>>::new(tmp_dir.clone(),10 * 4096).unwrap(),
-        CachedOnDiskCorpus::<MultipartInput<BytesInput>>::new(tmp_dir.clone(),10 * 4096).unwrap(),
+        InMemoryCorpus::<MultipartInput<BytesInput>>::new(),
+        InMemoryCorpus::<MultipartInput<BytesInput>>::new(),
         &mut feedback,
         // Same for objective feedbacks
         &mut objective,
@@ -479,7 +477,7 @@ pub fn init_phase_run(tmp_dir : PathBuf, corpus_dir : PathBuf, emulator: &mut Em
     )
     .expect("Failed to create QemuExecutor");
 
-    state.load_initial_inputs(&mut fuzzer, &mut executor, &mut mgr, &[corpus_dir.clone()]);
+    state.load_initial_inputs_forced(&mut fuzzer, &mut executor, &mut mgr, &[corpus_dir.clone()]);
 
     if unsafe { !SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() } {
         let exit_snapshot = unsafe { Box::from_raw(SMM_INIT_FUZZ_EXIT_SNAPSHOT) };

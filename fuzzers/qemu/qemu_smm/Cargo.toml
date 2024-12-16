@@ -4,10 +4,8 @@ version = "0.13.2"
 edition = "2021"
 
 [features]
-#default = ["std", "classic", "debug_trace"]
 default = ["std", "classic"]
 std = []
-debug_trace = []
 
 classic = [
 ] # The classic way to interact with LibAFL QEMU, with direct calls to QEMU's functions
