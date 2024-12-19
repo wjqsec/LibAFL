@@ -15,8 +15,6 @@ pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String) -> 
         format!("if=pflash,format=raw,unit=0,file={},readonly=on",ovmf_code_path).to_string(),
         "-drive".to_string(),
         format!("if=pflash,format=raw,unit=1,file={}",ovmf_var_path).to_string(),
-        "-hda".to_string(),
-        "/home/w/hd/uefi_fuzz/fuzzer/run/smmfuzz.img".to_string(),
         "-debugcon".to_string(),
         "file:debug.log".to_string(),
         "-global".to_string(),

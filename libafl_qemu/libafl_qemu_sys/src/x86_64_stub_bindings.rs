@@ -9522,6 +9522,16 @@ extern "C" {
         flags: BdrvRequestFlags,
     ) -> bool;
 }
+extern "C" {
+    pub fn syx_state_restore_from_file(filename: *const ::std::os::raw::c_char) -> bool;
+}
+extern "C" {
+    pub fn syx_state_save_to_file(
+        kind: DeviceSnapshotKind,
+        devices: *mut *mut ::std::os::raw::c_char,
+        filename: *mut ::std::os::raw::c_char,
+    ) -> bool;
+}
 pub const MemOp_MO_8: MemOp = MemOp(0);
 pub const MemOp_MO_16: MemOp = MemOp(1);
 pub const MemOp_MO_32: MemOp = MemOp(2);

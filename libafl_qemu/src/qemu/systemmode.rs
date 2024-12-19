@@ -234,6 +234,27 @@ impl Qemu {
         unsafe { libafl_load_qemu_snapshot(s.as_ptr() as *const _, sync) };
     }
 
+    pub fn state_save_to_file(&self, device_filter: &DeviceSnapshotFilter, filename: &str) -> bool {
+        let s = CString::new(filename).expect("Invalid snapshot name");
+        let mut v = vec![];
+        unsafe {
+            libafl_qemu_sys::syx_state_save_to_file(
+                device_filter.enum_id(),
+                device_filter.devices(&mut v),
+                s.as_ptr() as *mut i8,
+            )
+        }
+    }
+
+    pub fn state_restore_from_file(&self, filename: &str) -> bool {
+        let s = CString::new(filename).expect("Invalid snapshot name");
+        unsafe {
+            libafl_qemu_sys::syx_state_restore_from_file(
+                s.as_ptr() as *mut i8,
+            )
+        }
+    }
+
     #[must_use]
     pub fn create_fast_snapshot(&self, track: bool) -> FastSnapshotPtr {
         unsafe {

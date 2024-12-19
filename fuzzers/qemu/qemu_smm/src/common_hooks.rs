@@ -199,6 +199,8 @@ pub fn pre_io_write_smm_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : u
         if IN_FUZZ == false || IN_SMI == false {
             return;
         }
+        *handled = true;
+        return;
     }
     pre_io_write_common(base, offset, size, data, handled, cpu);
 }
@@ -267,7 +269,7 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
         1 => {
             unsafe {
                 *out_addr = DUMMY_MEMORY_VIRT_ADDR;
-                fuzz_input.set_dram_value(addr, size, &val.to_le_bytes());
+                // fuzz_input.set_dram_value(addr, size, &val.to_le_bytes());
             }
         },
         2 => {
@@ -366,7 +368,7 @@ pub fn pre_memrw_smm_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , ou
     if addr >= unsafe {COMMBUF_ADDR} && addr < unsafe {COMMBUF_ADDR + COMMBUF_SIZE} {  //outside comm buffer
         return;
     }
-    pre_memrw_common(pc, addr, size, out_addr, rw, val, fuzz_input, cpu, true);
+    pre_memrw_common(pc, addr, size, out_addr, rw, val, fuzz_input, cpu, false);
 }
 
 

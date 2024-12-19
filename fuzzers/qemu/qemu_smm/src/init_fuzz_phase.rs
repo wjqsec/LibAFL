@@ -90,7 +90,7 @@ fn try_run_without_fuzz(qemu : Qemu) -> SnapshotKind {
     return SnapshotKind::None;
 }
 
-pub fn init_phase_fuzz(seed_dirs : [PathBuf;1], corpus_dir : PathBuf, objective_dir : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, (CmpLogModule, ())), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, OnDiskCorpus<MultipartInput<BytesInput>>>>) -> SnapshotKind 
+pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, (CmpLogModule, ())), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, OnDiskCorpus<MultipartInput<BytesInput>>>>) -> SnapshotKind 
 {
     let qemu = emulator.qemu();
     let cpu = qemu.first_cpu().unwrap();
@@ -100,7 +100,7 @@ pub fn init_phase_fuzz(seed_dirs : [PathBuf;1], corpus_dir : PathBuf, objective_
     }
     unskip();
 
-    gen_init_random_seed(&seed_dirs[0]);
+    gen_init_random_seed(&seed_dirs);
     
     let try_snapshot = try_run_without_fuzz(qemu);
     if let SnapshotKind::None = try_snapshot {
@@ -214,7 +214,10 @@ pub fn init_phase_fuzz(seed_dirs : [PathBuf;1], corpus_dir : PathBuf, objective_
     );
     
     // A feedback to choose if an input is a solution or not
-    let mut objective = CrashFeedback::new();
+    let mut objective = feedback_or!(
+        CrashFeedback::new(),
+        StreamFeedback::new(&stream_observer)
+    );
 
     let mut state = StdState::new(
         StdRand::with_seed(current_nanos()),
@@ -248,7 +251,7 @@ pub fn init_phase_fuzz(seed_dirs : [PathBuf;1], corpus_dir : PathBuf, objective_
 
     if state.must_load_initial_inputs() {
         state
-            .load_initial_inputs(&mut fuzzer, &mut executor, &mut mgr, &seed_dirs)
+            .load_initial_inputs(&mut fuzzer, &mut executor, &mut mgr, &[seed_dirs.clone()])
             .unwrap_or_else(|_| {
                 error!("Failed to load initial corpus at {:?}", &seed_dirs);
                 exit_elegantly();
@@ -317,7 +320,7 @@ pub fn init_phase_fuzz(seed_dirs : [PathBuf;1], corpus_dir : PathBuf, objective_
             snapshot.restore_fuzz_snapshot(qemu, true);
             warn!("fuzz one module over, run to next module exit with {:?} {pc:#x} {cmd:#x} {sync_exit_reason:#x}",qemu_exit_reason);
         }
-        if libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 60 * 1 {
+        if libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 60 * 3 {
             skip();
         }
     }

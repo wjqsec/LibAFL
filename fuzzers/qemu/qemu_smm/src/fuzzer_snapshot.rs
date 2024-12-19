@@ -1,10 +1,14 @@
+use std::path::PathBuf;
+
 use crate::common_hooks::*;
+use crate::exit_elegantly;
 use libafl_qemu::{FastSnapshotPtr, Qemu};
 use libafl_qemu_sys::QEMUFile;
 use crate::qemu_args::*;
 use libafl_qemu::DeviceSnapshotFilter;
 use libafl_qemu::Regs;
 use libafl_qemu::GuestReg;
+use log::*;
 
 pub struct FuzzerSnapshot {
     qemu_snapshot : Option<FastSnapshotPtr>,
@@ -55,6 +59,23 @@ impl FuzzerSnapshot {
     pub fn restore_fuzz_snapshot(&self, qemu : Qemu, full_root_restore : bool) {
         unsafe {
             qemu.restore_fast_snapshot(self.qemu_snapshot.unwrap(), full_root_restore);
+        }
+    }
+
+    pub fn save_to_file(qemu : Qemu, filename : &PathBuf) {
+        let dev_filter = DeviceSnapshotFilter::DenyList(get_snapshot_dev_filter_list());
+        let ret = qemu.state_save_to_file(&dev_filter,filename.to_str().unwrap());
+        if !ret {
+            error!("save state to file error\n");
+            exit_elegantly();
+        }
+    }
+
+    pub fn restore_from_file(qemu : Qemu, filename : &PathBuf) {
+        let ret = qemu.state_restore_from_file(filename.to_str().unwrap());
+        if !ret {
+            error!("restore state from file error\n");
+            exit_elegantly();
         }
     }
 }
