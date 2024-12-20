@@ -36,9 +36,19 @@ static mut HOB_ADDR : u64 = 0;
 static mut HOB_SIZE : u64 = 0;
 
 static mut DEBUG_TRACE_ENABLE : bool = false;
+static mut DEBUG_TRACE_SWITCH : bool = false;
+
+pub fn enable_debug() {
+    unsafe {
+        DEBUG_TRACE_SWITCH = true;
+    }
+}
 pub fn enable_debug_trace() {
     unsafe {
         if !IN_SMI_FUZZ_PHASE {
+            return;
+        }
+        if !DEBUG_TRACE_SWITCH {
             return;
         }
         DEBUG_TRACE_ENABLE = true;
@@ -47,6 +57,9 @@ pub fn enable_debug_trace() {
 pub fn disable_debug_trace() {
     unsafe {
         if !IN_SMI_FUZZ_PHASE {
+            return;
+        }
+        if !DEBUG_TRACE_SWITCH {
             return;
         }
         DEBUG_TRACE_ENABLE = false;

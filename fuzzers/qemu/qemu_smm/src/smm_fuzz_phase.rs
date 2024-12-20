@@ -58,6 +58,7 @@ use crate::stream_input::*;
 use crate::qemu_args::*;
 use crate::common_hooks::*;
 use crate::exit_qemu::*;
+use crate::coverage::*;
 use crate::fuzzer_snapshot::*;
 use crate::qemu_control::*;
 use crate::cmd::*;
@@ -235,7 +236,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
     add_uefi_fuzz_token(&mut state);
 
     let mon = SimpleMonitor::new(|s| 
-        info!("{s} end:{:?} stream:{:?} crash:{:?} timeout:{:?} assert:{:?}",unsafe{END_TIMES}, unsafe{STREAM_OVER_TIMES}, unsafe{CRASH_TIMES}, unsafe{TIMEOUT_TIMES}, unsafe{ASSERT_TIMES})  
+        info!("{s} bbl:{:?} end:{:?} stream:{:?} crash:{:?} timeout:{:?} assert:{:?}",num_bbl_covered(), unsafe{END_TIMES}, unsafe{STREAM_OVER_TIMES}, unsafe{CRASH_TIMES}, unsafe{TIMEOUT_TIMES}, unsafe{ASSERT_TIMES})  
     );
     let mut mgr = SimpleEventManager::new(mon);
     // let scheduler = PowerQueueScheduler::new(&mut state, &mut edges_observer, PowerSchedule::FAST);
@@ -395,7 +396,7 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
     ).unwrap();
 
     let mon = SimpleMonitor::new(|s| 
-        info!("{s} end:{:?} stream:{:?} crash:{:?} timeout:{:?} assert:{:?}",unsafe{END_TIMES}, unsafe{STREAM_OVER_TIMES}, unsafe{CRASH_TIMES}, unsafe{TIMEOUT_TIMES}, unsafe{ASSERT_TIMES})  
+        info!("{s} bbl:{:?} end:{:?} stream:{:?} crash:{:?} timeout:{:?} assert:{:?}",num_bbl_covered(), unsafe{END_TIMES}, unsafe{STREAM_OVER_TIMES}, unsafe{CRASH_TIMES}, unsafe{TIMEOUT_TIMES}, unsafe{ASSERT_TIMES})  
     );
     let mut mgr = SimpleEventManager::new(mon);
     // let scheduler = PowerQueueScheduler::new(&mut state, &mut edges_observer, PowerSchedule::FAST);

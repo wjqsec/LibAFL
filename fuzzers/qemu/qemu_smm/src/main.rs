@@ -8,6 +8,7 @@ mod smm_fuzz_phase;
 mod stream_input;
 mod common_hooks;
 mod cmd;
+mod coverage;
 mod qemu_control;
 mod fuzzer_snapshot;
 mod smm_fuzz_qemu_cmds;
@@ -56,6 +57,7 @@ use crate::stream_input::*;
 use crate::qemu_args::*;
 use crate::common_hooks::*;
 use crate::cmd::*;
+use crate::coverage::*;
 use crate::exit_qemu::*;
 use crate::fuzzer_snapshot::*;
 use crate::smm_fuzz_phase::{smm_phase_fuzz, smm_phase_run};
@@ -82,6 +84,9 @@ struct Args {
 
     #[arg(short, long)]
     smi_input: Option<String>,
+
+    #[arg(short, long, action = clap::ArgAction::SetTrue)]
+    debug_trace: bool,
 }
 
 
@@ -109,6 +114,9 @@ fn main() {
         fs::create_dir_all(crash_path.clone()).unwrap();
     }
 
+    if args.debug_trace == true {
+        enable_debug();
+    }
     let snapshot_path = project_path.join("smi_fuzz_vm_snapshot.bin");
     
     if args.cmd == "fuzz" {
@@ -223,6 +231,15 @@ fn fuzz(ovmf_file_path : (String, String), seed_path : &PathBuf, corpus_path : &
     if snapshot_bin.exists() {
         info!("found snapshot file, start from snapshot!");
         FuzzerSnapshot::restore_from_file(qemu, snapshot_bin);
+        let mut block_id = emulator.modules_mut().blocks(
+        Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc: u64| -> Option<u64> {
+            bbl_translate_common(pc);
+            Some(1)
+        })),
+        Hook::Empty, 
+        Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
+            bbl_common(modules.qemu().first_cpu().unwrap()); 
+        })));
         let mut devread_id : PostDeviceregReadHookId = emulator.modules_mut().devread(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32| {
             let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
             post_io_read_smm_fuzz_phase(base , offset ,size , data , handled,fuzz_input ,modules.qemu().first_cpu().unwrap());
@@ -245,8 +262,13 @@ fn fuzz(ovmf_file_path : (String, String), seed_path : &PathBuf, corpus_path : &
     }
 
 
-    let mut block_id = emulator.modules_mut().blocks(Hook::Function(gen_hashed_block_ids::<_, _>), Hook::Empty, 
-    Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
+    let mut block_id = emulator.modules_mut().blocks(
+        Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc: u64| -> Option<u64> {
+            bbl_translate_common(pc);
+            Some(1)
+        })),
+        Hook::Empty, 
+        Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
         bbl_common(modules.qemu().first_cpu().unwrap()); 
     })));
     let mut devread_id : PostDeviceregReadHookId = emulator.modules_mut().devread(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32| {
@@ -360,6 +382,15 @@ fn run_smi(ovmf_file_path : (String, String), corpus_path : &PathBuf, run_mode :
     if snapshot_bin.exists() {
         info!("found snapshot file, start from snapshot!");
         FuzzerSnapshot::restore_from_file(qemu, snapshot_bin);
+        let mut block_id = emulator.modules_mut().blocks(
+            Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc: u64| -> Option<u64> {
+                bbl_translate_common(pc);
+                Some(1)
+            })),
+            Hook::Empty, 
+            Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
+            bbl_debug(modules.qemu().first_cpu().unwrap()); 
+        })));
         let mut devread_id : PostDeviceregReadHookId = emulator.modules_mut().devread(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32| {
             let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
             post_io_read_smm_fuzz_phase(base , offset ,size , data , handled,fuzz_input ,modules.qemu().first_cpu().unwrap());
@@ -381,8 +412,13 @@ fn run_smi(ovmf_file_path : (String, String), corpus_path : &PathBuf, run_mode :
         exit_elegantly();
     }
     
-    let mut block_id = emulator.modules_mut().blocks(Hook::Function(gen_hashed_block_ids::<_, _>), Hook::Empty, 
-    Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
+    let mut block_id = emulator.modules_mut().blocks(
+        Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc: u64| -> Option<u64> {
+            bbl_translate_common(pc);
+            Some(1)
+        })),
+        Hook::Empty, 
+        Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
         bbl_debug(modules.qemu().first_cpu().unwrap()); 
     })));
     let mut devread_id : PostDeviceregReadHookId = emulator.modules_mut().devread(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32| {
