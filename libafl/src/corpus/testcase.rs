@@ -57,6 +57,8 @@ where
     metadata_path: Option<PathBuf>,
     /// Time needed to execute the input
     exec_time: Option<Duration>,
+    /// Time needed to found the input
+    found_time: u64,
     /// Cached len of the input, if any
     cached_len: Option<usize>,
     /// Number of executions done at discovery time
@@ -183,6 +185,24 @@ where
         self.exec_time = Some(time);
     }
 
+    /// Get the execution time of the testcase
+    #[inline]
+    pub fn found_time(&self) -> &u64 {
+        &self.found_time
+    }
+
+    /// Get the execution time of the testcase (mutable)
+    #[inline]
+    pub fn found_time_mut(&mut self) -> &mut u64 {
+        &mut self.found_time
+    }
+
+    /// Sets the execution time of the current testcase
+    #[inline]
+    pub fn set_found_time(&mut self, time: u64) {
+        self.found_time = time;
+    }
+
     /// Get the executions
     #[inline]
     pub fn executions(&self) -> &u64 {
@@ -260,6 +280,7 @@ where
             #[cfg(feature = "std")]
             metadata_path: None,
             exec_time: None,
+            found_time: 0,
             cached_len: None,
             executions: 0,
             scheduled_count: 0,
@@ -286,6 +307,7 @@ where
             #[cfg(feature = "std")]
             metadata_path: None,
             exec_time: None,
+            found_time: 0,
             cached_len: None,
             executions: 0,
             scheduled_count: 0,
@@ -312,6 +334,7 @@ where
             #[cfg(feature = "std")]
             metadata_path: None,
             exec_time: None,
+            found_time: 0,
             cached_len: None,
             executions: 0,
             scheduled_count: 0,
@@ -338,6 +361,7 @@ where
             #[cfg(feature = "std")]
             metadata_path: None,
             exec_time: None,
+            found_time: 0,
             cached_len: None,
             executions,
             scheduled_count: 0,
@@ -390,6 +414,7 @@ where
             filename: None,
             metadata: SerdeAnyMap::new(),
             exec_time: None,
+            found_time: 0,
             cached_len: None,
             scheduled_count: 0,
             executions: 0,

@@ -1,23 +1,30 @@
 use core::{ptr::addr_of_mut, time::Duration};
 use std::cell::UnsafeCell;
 use std::fmt::format;
+use std::path::Path;
 use std::str::FromStr;
 use std::{path::PathBuf, process};
-use libafl::corpus::{HasCurrentCorpusId, HasTestcase};
-use libafl::state::HasSolutions;
+use libafl::corpus::{HasCurrentCorpusId, HasTestcase, Testcase};
+use libafl::state::{HasSolutions, HasStartTime};
 use libafl_bolts::math;
 use log::*;
 use std::ptr;
+use serde::{Serialize, Deserialize};
 use libafl::prelude::InMemoryCorpus;
 use libafl::{
     corpus::Corpus, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{AflMapFeedback, CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, OnDiskCorpus, CachedOnDiskCorpus, PowerQueueScheduler, QueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
 };
 use libafl::mutators::Tokens;
+use libafl::corpus::ondisk::*;
 use libafl_bolts::tuples::MatchNameRef;
 use libafl::feedbacks::stream::StreamFeedback;
 use libafl::inputs::multi::MultipartInput;
 use std::sync::{Arc, Mutex};
 use std::{error, fs};
+use std::fs::File;
+use serde_json::Value;
+use std::io::BufReader;
+use std::io::{Read, Write};
 use libafl_bolts::{
     current_nanos,
     ownedref::OwnedMutSlice,
@@ -236,7 +243,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
     add_uefi_fuzz_token(&mut state);
 
     let mon = SimpleMonitor::new(|s| 
-        info!("{s} bbl:{:?} end:{:?} stream:{:?} crash:{:?} timeout:{:?} assert:{:?}",num_bbl_covered(), unsafe{END_TIMES}, unsafe{STREAM_OVER_TIMES}, unsafe{CRASH_TIMES}, unsafe{TIMEOUT_TIMES}, unsafe{ASSERT_TIMES})  
+        info!("{s} end:{:?} stream:{:?} crash:{:?} timeout:{:?} assert:{:?}", unsafe{END_TIMES}, unsafe{STREAM_OVER_TIMES}, unsafe{CRASH_TIMES}, unsafe{TIMEOUT_TIMES}, unsafe{ASSERT_TIMES})  
     );
     let mut mgr = SimpleEventManager::new(mon);
     // let scheduler = PowerQueueScheduler::new(&mut state, &mut edges_observer, PowerSchedule::FAST);
@@ -418,12 +425,42 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
         IN_SMI_FUZZ_PHASE = true;
     }
 
+    
     match input {
         RunMode::RunCopus(corpus) => {
-            state.load_initial_inputs_forced(&mut fuzzer, &mut executor, &mut mgr, &[corpus]);
+            let mut corpus_inputs = Vec::new();
+            if let Ok(entries) = fs::read_dir(corpus.clone()) {
+                for entry in entries {
+                    if let Ok(entry) = entry {
+                        let file_name = entry.file_name();
+                        let file_name_str = file_name.to_string_lossy();
+                        if !file_name_str.starts_with('.') {
+                            let metadata_filename = format!(".{file_name_str}.metadata");
+                            let metadata_fullpath = entry.path().parent().unwrap().join(metadata_filename);
+                            corpus_inputs.push((entry.path().to_str().unwrap().to_string() , metadata_fullpath.to_str().unwrap().to_string(), 0));
+                        }
+                    }
+                }
+            }
+
+            for input in corpus_inputs.iter_mut() {
+                let contents = fs::read_to_string(input.1.clone()).unwrap();
+                let config_json : Value = serde_json::from_str(&contents[..]).unwrap();
+                let found_time = config_json.get("found_time").unwrap().as_u64().unwrap();
+                input.2 = found_time;
+            }
+            corpus_inputs.sort_by( |a ,b| {
+                a.2.cmp(&b.2)
+            });
+            for input in corpus_inputs.iter() {
+                let input = MultipartInput::from_file(input.0.clone()).unwrap();
+                fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input);
+                info!("bbl {}",num_bbl_covered());
+            }
         },
         RunMode::RunTestcase(testcase) => {
-            state.load_initial_inputs_by_filenames_forced(&mut fuzzer, &mut executor, &mut mgr, &[testcase]);
+            let input = MultipartInput::from_file(testcase.clone()).unwrap();
+            fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input);
         },
     }
 }

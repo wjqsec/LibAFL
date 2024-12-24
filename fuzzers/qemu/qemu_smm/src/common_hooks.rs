@@ -9,6 +9,8 @@ use std::sync::{Arc, Mutex};
 use std::vec::*;
 use std::slice;
 use std::cmp::min;
+use uuid::*;
+use crate::coverage::*;
 use crate::smm_fuzz_qemu_cmds::*;
 
 pub static mut IN_SMI_FUZZ_PHASE : bool = false;
@@ -717,6 +719,15 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 }
             }
         },
+        LIBAFL_QEMU_COMMAND_SMM_REPORT_SMM_MODULE_INFO => {
+            let uuid_addr = arg1;
+            let start_addr = arg2;
+            let end_addr = arg3;
+            let uuid_phy_addr = cpu.get_phys_addr_with_offset(uuid_addr).unwrap();
+            let uuid_host_addr = cpu.get_host_addr(uuid_phy_addr) as *mut u128;
+            let module_uuid = Uuid::from_bytes_le(unsafe { (*uuid_host_addr).to_le_bytes() });
+            info!("{:} {:#x}-{:#x}", module_uuid.to_string(), start_addr, end_addr);
+        },
         _ => { 
             error!("backdoor wrong cmd {:#x}",cmd); 
             exit_elegantly()
@@ -756,9 +767,10 @@ pub fn bbl_common(cpu : CPU) {
 }
 
 pub fn bbl_debug(cpu : CPU) {
+    let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
     if unsafe {DEBUG_TRACE_ENABLE == true}
     {
-        let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
+        
         let rax : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
         let rbx : GuestReg = cpu.read_reg(Regs::Rbx).unwrap();
         let rcx : GuestReg = cpu.read_reg(Regs::Rcx).unwrap();
@@ -767,6 +779,7 @@ pub fn bbl_debug(cpu : CPU) {
         let rdi : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
         info!("bbl-> {} pc:{pc:#x} rax:{rax:#x} rbx:{rbx:#x} rcx:{rcx:#x} rdx:{rdx:#x} rsi:{rsi:#x} rdi:{rdi:#x}",get_exec_count());
     }
+    bbl_exec_cov_record_common(pc);
     unsafe {
         match NEXT_EXIT {
             Some(SmmQemuExit::StreamNotFound) => {
@@ -782,7 +795,7 @@ pub fn bbl_debug(cpu : CPU) {
         } 
     }
 
-    if get_exec_count() > unsafe { NUM_TIMEOUT_BBL } {
+    if get_exec_count() > unsafe { NUM_TIMEOUT_BBL } { 
         cpu.exit_timeout();
     }
     set_exec_count(get_exec_count() + 1);

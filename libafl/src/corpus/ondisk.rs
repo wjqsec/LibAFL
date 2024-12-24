@@ -42,6 +42,8 @@ pub struct OnDiskMetadata<'a> {
     pub exec_time: &'a Option<Duration>,
     /// The amount of executions for this [`Testcase`]
     pub executions: &'a u64,
+    /// The time (sec) used to found this testcase
+    pub found_time: &'a u64,
 }
 
 /// A corpus able to store [`Testcase`]s to disk, and load them from disk, when they are being used.

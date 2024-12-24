@@ -427,6 +427,7 @@ where
             let ondisk_meta = OnDiskMetadata {
                 metadata: testcase.metadata_map(),
                 exec_time: testcase.exec_time(),
+                found_time: testcase.found_time(),
                 executions: testcase.executions(),
             };
 

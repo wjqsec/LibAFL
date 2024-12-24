@@ -3,9 +3,7 @@ use core::{borrow::{Borrow, BorrowMut}, ops::DerefMut};
 use alloc::{borrow::Cow, string::String};
 use crate::{corpus::Corpus, inputs::{HasMutatorBytes, HasTargetBytes}, prelude::{minimizer, HasCorpus}};
 use libafl_bolts::{
-    impl_serdeany,
-    tuples::{Handle, Handled, MatchNameRef},
-    Named,
+    current_time, impl_serdeany, tuples::{Handle, Handled, MatchNameRef}, Named
 };
 use std::{cmp::min, io::Read};
 use serde::{Deserialize, Serialize};
@@ -14,7 +12,7 @@ use crate::{
     corpus::Testcase, events::EventFirer, executors::ExitKind, feedbacks::Feedback, inputs::{BytesInput, MultipartInput}, observers::{ObserversTuple, StdErrObserver, StdOutObserver}, state::State, Error, HasMetadata
 };
 use crate::observers::stream::StreamObserver;
-
+use crate::prelude::HasStartTime;
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct StreamFeedback {
     observer_handle: Handle<StreamObserver>,
@@ -22,7 +20,7 @@ pub struct StreamFeedback {
 
 impl<S> Feedback<S> for StreamFeedback
 where
-    S: HasCurrentTestcase<MultipartInput<BytesInput>> + State<Input = MultipartInput<BytesInput>> + HasCorpus<Input = MultipartInput<BytesInput>>,
+    S: HasCurrentTestcase<MultipartInput<BytesInput>> + State<Input = MultipartInput<BytesInput>> + HasCorpus<Input = MultipartInput<BytesInput>> + HasStartTime,
 {
     #[allow(clippy::wrong_self_convention)]
     fn is_interesting<EM, OT>(
@@ -44,7 +42,7 @@ where
     #[inline]
     fn append_metadata<EM, OT>(
         &mut self,
-        _state: &mut S,
+        state: &mut S,
         _manager: &mut EM,
         observers: &OT,
         testcase: &mut Testcase<S::Input>,
@@ -53,6 +51,7 @@ where
         OT: ObserversTuple<S>,
         EM: EventFirer<State = S>,
     {
+        testcase.set_found_time(current_time().as_secs() - state.start_time().as_secs());
         let observer = observers.get(&self.observer_handle).unwrap();
         for (id, tmp_generated, used, input,append_input, limit, weight) in observer.get_newstream().into_iter() {
             if tmp_generated {

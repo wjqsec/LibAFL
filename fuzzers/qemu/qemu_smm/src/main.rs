@@ -57,7 +57,6 @@ use crate::stream_input::*;
 use crate::qemu_args::*;
 use crate::common_hooks::*;
 use crate::cmd::*;
-use crate::coverage::*;
 use crate::exit_qemu::*;
 use crate::fuzzer_snapshot::*;
 use crate::smm_fuzz_phase::{smm_phase_fuzz, smm_phase_run};
@@ -232,10 +231,7 @@ fn fuzz(ovmf_file_path : (String, String), seed_path : &PathBuf, corpus_path : &
         info!("found snapshot file, start from snapshot!");
         FuzzerSnapshot::restore_from_file(qemu, snapshot_bin);
         let mut block_id = emulator.modules_mut().blocks(
-        Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc: u64| -> Option<u64> {
-            bbl_translate_common(pc);
-            Some(1)
-        })),
+        Hook::Empty,
         Hook::Empty, 
         Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
             bbl_common(modules.qemu().first_cpu().unwrap()); 
@@ -263,10 +259,7 @@ fn fuzz(ovmf_file_path : (String, String), seed_path : &PathBuf, corpus_path : &
 
 
     let mut block_id = emulator.modules_mut().blocks(
-        Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc: u64| -> Option<u64> {
-            bbl_translate_common(pc);
-            Some(1)
-        })),
+        Hook::Empty,
         Hook::Empty, 
         Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
         bbl_common(modules.qemu().first_cpu().unwrap()); 
@@ -383,10 +376,7 @@ fn run_smi(ovmf_file_path : (String, String), corpus_path : &PathBuf, run_mode :
         info!("found snapshot file, start from snapshot!");
         FuzzerSnapshot::restore_from_file(qemu, snapshot_bin);
         let mut block_id = emulator.modules_mut().blocks(
-            Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc: u64| -> Option<u64> {
-                bbl_translate_common(pc);
-                Some(1)
-            })),
+            Hook::Empty,
             Hook::Empty, 
             Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
             bbl_debug(modules.qemu().first_cpu().unwrap()); 
@@ -413,10 +403,7 @@ fn run_smi(ovmf_file_path : (String, String), corpus_path : &PathBuf, run_mode :
     }
     
     let mut block_id = emulator.modules_mut().blocks(
-        Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc: u64| -> Option<u64> {
-            bbl_translate_common(pc);
-            Some(1)
-        })),
+        Hook::Empty,
         Hook::Empty, 
         Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
         bbl_debug(modules.qemu().first_cpu().unwrap()); 
