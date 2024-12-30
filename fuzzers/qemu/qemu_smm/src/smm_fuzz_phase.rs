@@ -4,7 +4,7 @@ use std::fmt::format;
 use std::path::Path;
 use std::str::FromStr;
 use std::{path::PathBuf, process};
-use libafl::corpus::{HasCurrentCorpusId, HasTestcase, Testcase};
+use libafl::corpus::{CorpusId, HasCurrentCorpusId, HasTestcase, Testcase};
 use libafl::state::{HasSolutions, HasStartTime};
 use libafl_bolts::math;
 use log::*;
@@ -68,6 +68,7 @@ use crate::exit_qemu::*;
 use crate::coverage::*;
 use crate::fuzzer_snapshot::*;
 use crate::qemu_control::*;
+use crate::smi_info::*;
 use crate::cmd::*;
 use crate::smm_fuzz_qemu_cmds::*;
 
@@ -76,6 +77,11 @@ static mut END_TIMES : u64 = 0;
 static mut CRASH_TIMES : u64 = 0;
 static mut STREAM_OVER_TIMES : u64 = 0;
 static mut ASSERT_TIMES : u64 = 0;
+
+
+static mut SMM_FUZZ_PHASE_SNAPSHOT : *mut FuzzerSnapshot = ptr::null_mut();
+
+
 fn gen_init_random_seed(dir : &PathBuf) {
     let mut initial_input = MultipartInput::<BytesInput>::new();
     initial_input.add_part(0 as u128, BytesInput::new(vec![]), 0x10, 0);
@@ -97,17 +103,21 @@ fn add_uefi_fuzz_token(state : &mut StdState<MultipartInput<BytesInput>, CachedO
     state.add_metadata(tokens);
 }
 
-fn run_to_smm_fuzz_point(qemu : Qemu, cpu : CPU) -> FuzzerSnapshot {
+fn run_to_smm_fuzz_point(qemu : Qemu, cpu : CPU) {
     // run to the start cause we are now at the start of the smm fuzz driver
     let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),10000000000, true, false);
     if let Ok(ref qemu_exit_reason) = qemu_exit_reason {
         if let QemuExitReason::SyncExit = qemu_exit_reason {
             if cmd == LIBAFL_QEMU_COMMAND_END {
                 if sync_exit_reason == LIBAFL_QEMU_END_SMM_FUZZ_START {
-                    return FuzzerSnapshot::from_qemu(qemu);
+                    unsafe {
+                        let box_snap = Box::new(FuzzerSnapshot::from_qemu(qemu));
+                        SMM_FUZZ_PHASE_SNAPSHOT = Box::into_raw(box_snap);
+                    }
+                    return;
                 }
                 else {
-                    error!("got error while going to the smi fuzz point");
+                    error!("got sync_exit_reason {} error while going to the smi fuzz point", sync_exit_reason);
                     exit_elegantly();
                 }
             }
@@ -118,9 +128,7 @@ fn run_to_smm_fuzz_point(qemu : Qemu, cpu : CPU) -> FuzzerSnapshot {
     }
     error!("got error while going to the smi fuzz point");
     exit_elegantly();
-    return FuzzerSnapshot::new_empty();
 }
-
 
 pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, (CmpLogModule, ())), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, OnDiskCorpus<MultipartInput<BytesInput>>>>)
 {
@@ -128,7 +136,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
     let cpu: CPU = qemu.first_cpu().unwrap();
     gen_init_random_seed(&seed_dirs);
 
-    let smi_fuzz_snapshot = run_to_smm_fuzz_point(qemu, cpu);
+    run_to_smm_fuzz_point(qemu, cpu);
 
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         let mut inputs = StreamInputs::from_multiinput(input);
@@ -139,7 +147,8 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu = in_qemu.first_cpu().unwrap();
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &smi_fuzz_snapshot, 50000,false, true);
+        let snapshot = unsafe { &*SMM_FUZZ_PHASE_SNAPSHOT };
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, snapshot, 50000,false, true);
         let exit_code;
         debug!("new run exit {:?}",qemu_exit_reason);
         if let Ok(qemu_exit_reason) = qemu_exit_reason
@@ -281,11 +290,48 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
 
     let mut stages = tuple_list!(ShadowTracingStage::new(&mut shadow_executor),i2s, StdMutationalStage::new(mutator));
 
-    loop {
-        fuzzer.fuzz_one(&mut stages, &mut shadow_executor, &mut state, &mut mgr).unwrap();
+    for i in 0..(state.corpus().last().unwrap().0 + 1) {
+        let testcase = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone();
+        let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
+        let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
+        smi_group_info_to_file(&smi_metadata_fullpath);
+    }
+    for i in 0..( state.corpus().last().unwrap().0 + 1) {
+        let input = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone().input().clone().unwrap();
+        unsafe {
+            CURRENT_FUZZ_MODE = SMM_FUZZ_REPORT;
+        }
+        fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &input);
+        let tmp_snapshot = unsafe { Box::from_raw(SMM_FUZZ_PHASE_SNAPSHOT) };
+        tmp_snapshot.delete(qemu);
+        run_to_smm_fuzz_point(qemu, cpu);
     }
 
-}
+    loop {
+        let mut num_corpus = state.corpus().last().unwrap().0;
+        unsafe {
+            CURRENT_FUZZ_MODE = SMM_FUZZ_RUN;
+        }
+        fuzzer.fuzz_one(&mut stages, &mut shadow_executor, &mut state, &mut mgr).unwrap();
+        for i in num_corpus..(state.corpus().last().unwrap().0 + 1) {
+            let testcase = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone();
+            let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
+            let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
+            smi_group_info_to_file(&smi_metadata_fullpath);
+        }
+        for i in num_corpus..( state.corpus().last().unwrap().0 + 1) {
+            let input = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone().input().clone().unwrap();
+            unsafe {
+                CURRENT_FUZZ_MODE = SMM_FUZZ_REPORT;
+            }
+            fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &input);
+            let tmp_snapshot = unsafe { Box::from_raw(SMM_FUZZ_PHASE_SNAPSHOT) };
+            tmp_snapshot.delete(qemu);
+            run_to_smm_fuzz_point(qemu, cpu);
+        }
+    }
+
+} 
 
 
 pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (), StdState<MultipartInput<BytesInput>, InMemoryCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, InMemoryCorpus<MultipartInput<BytesInput>>>>)
@@ -293,7 +339,7 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
     let qemu = emulator.qemu();
     let cpu: CPU = qemu.first_cpu().unwrap();
 
-    let smi_fuzz_snapshot = run_to_smm_fuzz_point(qemu, cpu);
+    run_to_smm_fuzz_point(qemu, cpu);
 
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         let mut inputs = StreamInputs::from_multiinput(input);
@@ -304,7 +350,8 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu = in_qemu.first_cpu().unwrap();
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &smi_fuzz_snapshot, 2000000,false, true);
+        let snapshot = unsafe { &*SMM_FUZZ_PHASE_SNAPSHOT };
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, snapshot, 2000000,false, true);
         let exit_code;
         info!("new run exit {:?}",qemu_exit_reason);
         if let Ok(qemu_exit_reason) = qemu_exit_reason
@@ -437,7 +484,10 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
                         if !file_name_str.starts_with('.') {
                             let metadata_filename = format!(".{file_name_str}.metadata");
                             let metadata_fullpath = entry.path().parent().unwrap().join(metadata_filename);
-                            corpus_inputs.push((entry.path().to_str().unwrap().to_string() , metadata_fullpath.to_str().unwrap().to_string(), 0));
+
+                            let smi_metadata_filename = format!(".{file_name_str}.smi_metadata");
+                            let smi_metadata_fullpath = entry.path().parent().unwrap().join(smi_metadata_filename);
+                            corpus_inputs.push((entry.path().to_str().unwrap().to_string() , metadata_fullpath.to_str().unwrap().to_string(), smi_metadata_fullpath.to_str().unwrap().to_string(), 0));
                         }
                     }
                 }
@@ -447,12 +497,13 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
                 let contents = fs::read_to_string(input.1.clone()).unwrap();
                 let config_json : Value = serde_json::from_str(&contents[..]).unwrap();
                 let found_time = config_json.get("found_time").unwrap().as_u64().unwrap();
-                input.2 = found_time;
+                input.3 = found_time;
             }
             corpus_inputs.sort_by( |a ,b| {
-                a.2.cmp(&b.2)
+                a.3.cmp(&b.3)
             });
             for input in corpus_inputs.iter() {
+                smi_group_info_from_file(&PathBuf::from(input.2.clone()));
                 let input = MultipartInput::from_file(input.0.clone()).unwrap();
                 fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input);
                 info!("bbl {}",num_bbl_covered());

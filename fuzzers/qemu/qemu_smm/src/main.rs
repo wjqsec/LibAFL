@@ -8,6 +8,7 @@ mod smm_fuzz_phase;
 mod stream_input;
 mod common_hooks;
 mod cmd;
+mod smi_info;
 mod coverage;
 mod qemu_control;
 mod fuzzer_snapshot;
@@ -57,6 +58,7 @@ use crate::stream_input::*;
 use crate::qemu_args::*;
 use crate::common_hooks::*;
 use crate::cmd::*;
+use crate::smi_info::*;
 use crate::exit_qemu::*;
 use crate::fuzzer_snapshot::*;
 use crate::smm_fuzz_phase::{smm_phase_fuzz, smm_phase_run};
@@ -117,7 +119,7 @@ fn main() {
         enable_debug();
     }
     let snapshot_path = project_path.join("smi_fuzz_vm_snapshot.bin");
-    
+    init_smi_groups();
     if args.cmd == "fuzz" {
         fuzz((args.ovmf_code, args.ovmf_var), &seed_path, &corpus_path, &crash_path, &snapshot_path);
     } else if args.cmd == "run" {

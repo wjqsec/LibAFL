@@ -4,12 +4,14 @@ use log::*;
 
 use crate::{exit_elegantly, stream_input::*,SmmQemuExit};
 use std::cell::UnsafeCell;
+use std::process::exit;
 use once_cell::sync::Lazy;
 use std::sync::{Arc, Mutex};
 use std::vec::*;
 use std::slice;
 use std::cmp::min;
 use uuid::*;
+use crate::smi_info::*;
 use crate::coverage::*;
 use crate::smm_fuzz_qemu_cmds::*;
 
@@ -39,6 +41,8 @@ static mut HOB_SIZE : u64 = 0;
 
 static mut DEBUG_TRACE_ENABLE : bool = false;
 static mut DEBUG_TRACE_SWITCH : bool = false;
+
+pub static mut CURRENT_FUZZ_MODE : u64 = SMM_FUZZ_RUN;
 
 pub fn enable_debug() {
     unsafe {
@@ -506,10 +510,53 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_SMI_SELECT_FUZZ_DATA => {
+            let mut current_group_index = 0;
+            if unsafe { IN_FUZZ } {
+                match fuzz_input.get_smi_group_index_fuzz_data() {
+                    Ok((group_index)) => { 
+                        current_group_index = group_index;
+                    },
+                    Err(io_err) => {    
+                        match io_err {
+                            StreamError::StreamNotFound(id) => {
+                                fuzz_input.generate_init_stream(id);
+                                match fuzz_input.get_smi_group_index_fuzz_data() {
+                                    Ok((group_index)) => { 
+                                        current_group_index = group_index;
+                                    },
+                                    _ => {    
+                                        error!("smi group index data generate error");
+                                        exit_elegantly();
+                                    }
+                                }
+                            },
+                            StreamError::StreamOutof(id, need_len) => {
+                                let append_data = fuzz_input.append_temp_stream(id, need_len);
+                                current_group_index = append_data[0];
+                            },
+                            _ => {
+                                error!("smi group index data get error");
+                                exit_elegantly();
+                            },
+                        }
+                    }
+                }   
+            }
             if unsafe { IN_FUZZ } {
                 match fuzz_input.get_smi_select_info_fuzz_data() {
                     Ok((fuzz_input_ptr, len)) => { 
-                        unsafe { SMI_SELECT_BUFFER_HOST_PTR.copy_from(fuzz_input_ptr, len); }
+                        unsafe { 
+                            for i in 0..len {
+                                let current_addr = unsafe { SMI_SELECT_BUFFER_HOST_PTR.add(i) };
+                                let random_index = unsafe { *fuzz_input_ptr.add(i) };
+                                if let Some(index) = get_smi_by_random_group_index(current_group_index, random_index) {
+                                    *current_addr = index;
+                                } else {
+                                    error!("smi select info error");
+                                    exit_elegantly();
+                                }
+                            }
+                        }
                         ret = len as u64;
                     },
                     Err(io_err) => {    
@@ -518,7 +565,18 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                 fuzz_input.generate_init_stream(id);
                                 match fuzz_input.get_smi_select_info_fuzz_data() {
                                     Ok((fuzz_input_ptr, len)) => { 
-                                        unsafe { SMI_SELECT_BUFFER_HOST_PTR.copy_from(fuzz_input_ptr, len); }
+                                        unsafe { 
+                                            for i in 0..len {
+                                                let current_addr = unsafe { SMI_SELECT_BUFFER_HOST_PTR.add(i) };
+                                                let random_index = unsafe { *fuzz_input_ptr.add(i) };
+                                                if let Some(index) = get_smi_by_random_group_index(current_group_index, random_index) {
+                                                    *current_addr = index;
+                                                } else {
+                                                    error!("smi select info error");
+                                                    exit_elegantly();
+                                                }
+                                            }
+                                        }
                                         ret = len as u64;
                                     },
                                     _ => {    
@@ -678,37 +736,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_SMI_GROUP_INDEX_FUZZ_DATA => {
-            if unsafe { IN_FUZZ } {
-                match fuzz_input.get_smi_group_index_fuzz_data() {
-                    Ok((group_index)) => { 
-                        ret = group_index as u64;
-                    },
-                    Err(io_err) => {    
-                        match io_err {
-                            StreamError::StreamNotFound(id) => {
-                                fuzz_input.generate_init_stream(id);
-                                match fuzz_input.get_smi_group_index_fuzz_data() {
-                                    Ok((group_index)) => { 
-                                        ret = group_index as u64;
-                                    },
-                                    _ => {    
-                                        error!("smi group index data generate error");
-                                        exit_elegantly();
-                                    }
-                                }
-                            },
-                            StreamError::StreamOutof(id, need_len) => {
-                                let append_data = fuzz_input.append_temp_stream(id, need_len);
-                                ret = append_data[0] as u64;
-                            },
-                            _ => {
-                                error!("smi group index data get error");
-                                exit_elegantly();
-                            },
-                        }
-                    }
-                }   
-            }
+            
         },
         LIBAFL_QEMU_COMMAND_SMM_ASK_SKIP_MODULE => {
             unsafe {
@@ -728,8 +756,22 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             let module_uuid = Uuid::from_bytes_le(unsafe { (*uuid_host_addr).to_le_bytes() });
             info!("{:} {:#x}-{:#x}", module_uuid.to_string(), start_addr, end_addr);
         },
+        LIBAFL_QEMU_COMMAND_SMM_REPORT_SMM_FUZZ_GROUP => {
+            let group = arg1 as i64;
+            let smi_index = arg2 as u8;
+            if group == -1 {
+                clear_smi_groups();
+            } else {
+                add_smi_group_info(group as u8, smi_index);
+            }
+        },
+        LIBAFL_QEMU_COMMAND_SMM_GET_EXEC_CMD => {
+            ret = unsafe { CURRENT_FUZZ_MODE };
+        },
+        LIBAFL_QEMU_COMMAND_SMM_GET_FUZZ_SMI_INDEX => {
+        },
         _ => { 
-            error!("backdoor wrong cmd {:#x}",cmd); 
+            error!("backdoor wrong cmd {:}",cmd); 
             exit_elegantly()
         },
     };
