@@ -46,10 +46,10 @@ impl StreamInfo {
         StreamInfo::IoStream(((pc as u128) << 64) | (addr as u128) | IO_STREAM_MASK, 32, 128, 1)
     }
     fn new_dram_stream() -> Self {
-        StreamInfo::DramStream(DRAM_STREAM_MASK, 256, 1024, 2)
+        StreamInfo::DramStream(DRAM_STREAM_MASK, 256, 1024, 3)
     }
     fn new_comm_buf_stream(index : u64, times : u64) -> Self {
-        StreamInfo::CommBufStream(COMMBUF_STREAM_MASK | ((index as u128) << 32) | (times as u128), 128, 256, 10)
+        StreamInfo::CommBufStream(COMMBUF_STREAM_MASK | ((index as u128) << 32) | (times as u128), 128, 256, 1)
     }
     fn new_msr_stream() -> Self {
         StreamInfo::MsrStream(MSR_STREAM_MASK, 64, 256, 1)

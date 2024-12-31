@@ -216,6 +216,7 @@ fn fuzz(ovmf_file_path : (String, String), seed_path : &PathBuf, corpus_path : &
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
                 if cmd == LIBAFL_QEMU_COMMAND_END {  // sync exit
                     if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_START {
+                        info!("first breakpoint hit");
                         set_current_module(arg1, arg2);
                         snapshot = SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
                     }
@@ -227,7 +228,7 @@ fn fuzz(ovmf_file_path : (String, String), seed_path : &PathBuf, corpus_path : &
         error!("first breakpoint hit strange place");
         exit_elegantly();
     }
-    info!("first breakpoint hit");
+    
 
     if snapshot_bin.exists() {
         info!("found snapshot file, start from snapshot!");
@@ -296,7 +297,6 @@ fn fuzz(ovmf_file_path : (String, String), seed_path : &PathBuf, corpus_path : &
                 snapshot = init_phase_fuzz(seed_dirs, corpus_dir, crash_dir, &mut emulator); 
                 snap.delete(qemu);
                 module_index += 1;
-                info!("passed one module");
             },
             SnapshotKind::EndOfSmmInitSnap(_) => { 
                 error!("got EndOfSmmInitSnap"); 

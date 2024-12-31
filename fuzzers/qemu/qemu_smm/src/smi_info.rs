@@ -45,15 +45,12 @@ pub fn init_smi_groups() {
         }));
     }
 }
-pub fn clear_smi_groups() {
-    unsafe {
-        (&mut (*SMI_GROUPS)).info.clear();
-    }
-}
 
 pub fn add_smi_group_info(group: u8, smi_index: u8) {
     unsafe {
-        (&mut (*SMI_GROUPS)).info.entry(group).or_insert(vec![]).push(smi_index);
+        if ! (&mut (*SMI_GROUPS)).info.entry(group).or_insert(vec![]).contains(&smi_index) {
+            (&mut (*SMI_GROUPS)).info.entry(group).or_insert(vec![]).push(smi_index);
+        }
     }
 }
 pub fn get_smi_by_random_group_index(group: u8, random_index: u8) -> Option<u8> {

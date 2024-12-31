@@ -58,7 +58,7 @@ where
     /// Time needed to execute the input
     exec_time: Option<Duration>,
     /// Time needed to found the input
-    found_time: u64,
+    found_time: u128,
     /// Cached len of the input, if any
     cached_len: Option<usize>,
     /// Number of executions done at discovery time
@@ -187,19 +187,19 @@ where
 
     /// Get the execution time of the testcase
     #[inline]
-    pub fn found_time(&self) -> &u64 {
+    pub fn found_time(&self) -> &u128 {
         &self.found_time
     }
 
     /// Get the execution time of the testcase (mutable)
     #[inline]
-    pub fn found_time_mut(&mut self) -> &mut u64 {
+    pub fn found_time_mut(&mut self) -> &mut u128 {
         &mut self.found_time
     }
 
     /// Sets the execution time of the current testcase
     #[inline]
-    pub fn set_found_time(&mut self, time: u64) {
+    pub fn set_found_time(&mut self, time: u128) {
         self.found_time = time;
     }
 

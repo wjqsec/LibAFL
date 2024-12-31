@@ -51,7 +51,7 @@ where
         OT: ObserversTuple<S>,
         EM: EventFirer<State = S>,
     {
-        testcase.set_found_time(current_time().as_secs() - state.start_time().as_secs());
+        testcase.set_found_time(current_time().as_micros() - state.start_time().as_micros());
         let observer = observers.get(&self.observer_handle).unwrap();
         for (id, tmp_generated, used, input,append_input, limit, weight) in observer.get_newstream().into_iter() {
             if tmp_generated {
