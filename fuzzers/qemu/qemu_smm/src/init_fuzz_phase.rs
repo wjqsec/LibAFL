@@ -290,6 +290,11 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         fuzzer
             .fuzz_one(&mut stages, &mut shadow_executor, &mut state, &mut mgr)
             .unwrap();
+        if libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 30 * 1 {
+            skip();
+            let dummy_testcase = state.corpus().get(state.corpus().last().unwrap()).unwrap().clone().take().clone().input().clone().unwrap();
+            fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &dummy_testcase);
+        }
         if unsafe { !SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() } {
             let exit_snapshot = unsafe { Box::from_raw(SMM_INIT_FUZZ_EXIT_SNAPSHOT) };
             let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &exit_snapshot,800000000, true, false);
@@ -320,9 +325,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
             snapshot.restore_fuzz_snapshot(qemu, true);
             warn!("fuzz one module over, run to next module exit with {:?} {pc:#x} {cmd:#x} {sync_exit_reason:#x}",qemu_exit_reason);
         }
-        if libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 60 * 3 {
-            skip();
-        }
+
     }
     unreachable!();
 

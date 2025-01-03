@@ -358,7 +358,7 @@ pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , o
         if pc < CURRENT_MODULE_ADDR || pc >= CURRENT_MODULE_END {
             return;
         }
-        if addr < 0xff000000 {  // higher than this, could be fuzzed
+        if addr < 0xe0000000 {  // higher than this, could be fuzzed
             if  addr < HOB_ADDR  || addr >= (HOB_ADDR + HOB_SIZE) { // non HOB accees not to mutate
                 return;
             }
