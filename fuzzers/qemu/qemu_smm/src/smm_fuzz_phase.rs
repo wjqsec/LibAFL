@@ -9,6 +9,9 @@ use libafl::events::ProgressReporter;
 use libafl::state::{HasSolutions, HasStartTime};
 use libafl_bolts::math;
 use log::*;
+use libafl_bolts::{
+    current_time, impl_serdeany, tuples::{Handle, Handled, MatchNameRef}, Named
+};
 use std::ptr;
 use serde::{Serialize, Deserialize};
 use libafl::prelude::InMemoryCorpus;
@@ -17,7 +20,6 @@ use libafl::{
 };
 use libafl::mutators::Tokens;
 use libafl::corpus::ondisk::*;
-use libafl_bolts::tuples::MatchNameRef;
 use libafl::feedbacks::stream::StreamFeedback;
 use libafl::inputs::multi::MultipartInput;
 use std::sync::{Arc, Mutex};
@@ -118,7 +120,7 @@ fn run_to_smm_fuzz_point(qemu : Qemu, cpu : CPU) -> SnapshotKind {
 }
 
 
-pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, (CmpLogModule, ())), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, OnDiskCorpus<MultipartInput<BytesInput>>>>)
+pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, (CmpLogModule, ())), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, OnDiskCorpus<MultipartInput<BytesInput>>>>, fuzz_time : Option<Duration>)
 {
     let qemu = emulator.qemu();
     let cpu: CPU = qemu.first_cpu().unwrap();
@@ -291,6 +293,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
         smi_group_info_to_file(&smi_metadata_fullpath);
     }
+
     for i in 0..( state.corpus().last().unwrap().0 + 1) {
         let input = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone().input().clone().unwrap();
         fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &input);
@@ -298,7 +301,11 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
     }
 
     loop {
-        let mut num_corpus = state.corpus().last().unwrap().0;
+        let num_corpus = state.corpus().last().unwrap().0;
+        let mut num_solutions = None;
+        if state.solutions().last().is_some() {
+            num_solutions = Some(state.solutions().last().unwrap().0);
+        }
         fuzzer.fuzz_one(&mut stages, &mut shadow_executor, &mut state, &mut mgr).unwrap();
         mgr.maybe_report_progress(&mut state, Duration::from_secs(60));
         for i in num_corpus..(state.corpus().last().unwrap().0 + 1) {
@@ -307,10 +314,26 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
             let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
             smi_group_info_to_file(&smi_metadata_fullpath);
         }
+        if num_solutions.is_some() {
+            for i in num_solutions.unwrap()..(state.solutions().last().unwrap().0 + 1) {
+                let testcase = state.solutions().get(CorpusId::from(i)).unwrap().clone().take().clone();
+                let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
+                let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
+                smi_group_info_to_file(&smi_metadata_fullpath);
+            }
+        }
+        
         for i in num_corpus..( state.corpus().last().unwrap().0 + 1) {
             let input = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone().input().clone().unwrap();
             fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &input);
             let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),30000000, true, false);
+        }
+
+        if let Some(fuzz_time) = fuzz_time {
+            if (current_time().as_secs() - state.start_time().as_secs()) > fuzz_time.as_secs() {
+                info!("Fuzz {:?} Finished",fuzz_time);
+                break;
+            }
         }
     }
 
