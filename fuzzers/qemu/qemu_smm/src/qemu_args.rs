@@ -3,7 +3,7 @@ use std::string::*;
 use std::ffi::{CString, CStr};
 
 const OVMF_MODE : &str = "RELEASE";
-pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String) -> Vec<String>
+pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String, log : &String) -> Vec<String>
 {
     vec![
         "qemu-system-x86_64".to_string(),
@@ -16,7 +16,7 @@ pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String) -> 
         "-drive".to_string(),
         format!("if=pflash,format=raw,unit=1,file={}",ovmf_var_path).to_string(),
         "-debugcon".to_string(),
-        "file:debug.log".to_string(),
+        format!("file:{}",log).to_string(),
         "-global".to_string(),
         "isa-debugcon.iobase=0x402".to_string(),
         "-L".to_string(),

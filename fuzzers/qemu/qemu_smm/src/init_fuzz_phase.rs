@@ -290,7 +290,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         fuzzer
             .fuzz_one(&mut stages, &mut shadow_executor, &mut state, &mut mgr)
             .unwrap();
-        if libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 30 * 1 {
+        if libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 60 * 3 {
             skip();
             let dummy_testcase = state.corpus().get(state.corpus().last().unwrap()).unwrap().clone().take().clone().input().clone().unwrap();
             fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &dummy_testcase);

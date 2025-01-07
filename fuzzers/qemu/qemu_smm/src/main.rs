@@ -19,7 +19,7 @@ use std::process::exit;
 use std::str::FromStr;
 use std::{path::PathBuf, process};
 use log::*;
-use clap::{Parser, ValueEnum, ArgGroup};
+use clap::{Parser, ValueEnum, ArgGroup, Subcommand};
 use qemu_control::qemu_run_once;
 use std::fs;
 use libafl::{
@@ -85,36 +85,36 @@ fn parse_duration(src: &str) -> Result<Duration, String> {
     
     Ok(Duration::from_secs(parsed_value * multiplier))
 }
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Subcommand, Clone, Debug, PartialEq)]
 enum SmmCommand {
-    Fuzz,
-    Run,
+    Fuzz {
+        #[arg(short, long)]
+        ovmf_code: String,
+    
+        #[arg(short, long)]
+        ovmf_var: String,
+
+        #[arg(long, value_parser = parse_duration)]
+        fuzz_time: Option<Duration>,
+    },
+    Run {
+        #[arg(short, long)]
+        inputs: Option<String>,
+
+        #[arg(short, long, action = clap::ArgAction::SetTrue)]
+        debug_trace: bool,
+    },
 }
 
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    #[arg(short, long)]
-    ovmf_code: String,
-
-    #[arg(short, long)]
-    ovmf_var: String,
+    #[command(subcommand)]
+    cmd: SmmCommand,
 
     #[arg(short, long)]
     proj: String,
-
-    #[arg(short, long)]
-    cmd: SmmCommand,
-
-    #[arg(short, long, required_if_eq("cmd", "Run"))]
-    smi_input: Option<String>,
-
-    #[arg(short, long, action = clap::ArgAction::SetTrue, required_if_eq("cmd", "Run"))]
-    debug_trace: bool,
-
-    #[arg(short = 'i', long = "interval", value_parser = parse_duration, required_if_eq("cmd", "Fuzz"))]
-    fuzz_time: Option<Duration>,
 }
 
 
@@ -142,25 +142,37 @@ fn main() {
         fs::create_dir_all(crash_path.clone()).unwrap();
     }
 
-    if args.debug_trace == true {
-        enable_debug();
-    }
     let snapshot_path = project_path.join("smi_fuzz_vm_snapshot.bin");
-    init_smi_groups();
+    let ovmf_code_copy = project_path.join("OVMF_CODE.fd");
+    let ovmf_var_copy = project_path.join("OVMF_VARS.fd");
+    let log_file = project_path.join("log.txt");
 
 
     match args.cmd {
-        SmmCommand::Fuzz => {
-            fuzz((args.ovmf_code, args.ovmf_var), (&seed_path, &corpus_path, &crash_path), &snapshot_path, args.fuzz_time);
+        SmmCommand::Fuzz { ovmf_code, ovmf_var, fuzz_time } => {
+            if !ovmf_code_copy.exists() {
+                fs::copy(ovmf_code, ovmf_code_copy.clone()).unwrap();
+            }
+            if !ovmf_var_copy.exists() {
+                fs::copy(ovmf_var, ovmf_var_copy.clone()).unwrap();
+            }
+            fuzz((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), (&seed_path, &corpus_path, &crash_path), &snapshot_path, fuzz_time, &log_file);
         },
-        SmmCommand::Run => {
-            let md = fs::metadata(args.smi_input.clone().unwrap().clone().as_str()).unwrap();
+        SmmCommand::Run { inputs, debug_trace } => {
+            if !ovmf_code_copy.exists() || !ovmf_var_copy.exists() {
+                error!("ovmf files not found");
+                exit_elegantly();
+            }
+            if debug_trace == true {
+                enable_debug();
+            }
+            let md = fs::metadata(inputs.clone().unwrap().clone().as_str()).unwrap();
             if md.is_dir() {
-                let run_mode = RunMode::RunCopus(PathBuf::from_str(args.smi_input.unwrap().clone().as_str()).unwrap());
-                run_smi((args.ovmf_code, args.ovmf_var), &corpus_path,run_mode, &snapshot_path);
+                let run_mode = RunMode::RunCopus(PathBuf::from_str(inputs.unwrap().clone().as_str()).unwrap());
+                run_smi((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), &corpus_path,run_mode, &snapshot_path, &log_file);
             } else if md.is_file() {
-                let run_mode = RunMode::RunTestcase(PathBuf::from_str(args.smi_input.unwrap().clone().as_str()).unwrap());
-                run_smi((args.ovmf_code, args.ovmf_var), &corpus_path,run_mode, &snapshot_path);
+                let run_mode = RunMode::RunTestcase(PathBuf::from_str(inputs.unwrap().clone().as_str()).unwrap());
+                run_smi((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), &corpus_path,run_mode, &snapshot_path, &log_file);
             }
         }
     }
@@ -220,8 +232,8 @@ fn get_smi_fuzz_phase_dirs(corpus_dir : &PathBuf) -> PathBuf {
     corpus_dir.join(PathBuf::from(format!("smi_phase_corpus/")))
 }
 
-fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) : (&PathBuf, &PathBuf, &PathBuf), snapshot_bin : &PathBuf, fuzz_time : Option<Duration>) {
-    let args: Vec<String> = gen_ovmf_qemu_args(&ovmf_file_path.0, &ovmf_file_path.1);
+fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) : (&PathBuf, &PathBuf, &PathBuf), snapshot_bin : &PathBuf, fuzz_time : Option<Duration>, log_file : &PathBuf) {
+    let args: Vec<String> = gen_ovmf_qemu_args(&ovmf_file_path.0, &ovmf_file_path.1, &log_file.to_str().unwrap().to_string());
     let env: Vec<(String, String)> = env::vars().collect();
     let qemu: Qemu = Qemu::init(args.as_slice(),env.as_slice()).unwrap();
     let mut emulator  = Emulator::new_with_qemu(qemu,
@@ -368,9 +380,9 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
     exit_elegantly();
 }
 
-fn run_smi(ovmf_file_path : (String, String), corpus_path : &PathBuf, run_mode : RunMode, snapshot_bin : &PathBuf) {
+fn run_smi(ovmf_file_path : (String, String), corpus_path : &PathBuf, run_mode : RunMode, snapshot_bin : &PathBuf, log_file : &PathBuf) {
 
-    let args: Vec<String> = gen_ovmf_qemu_args(&ovmf_file_path.0, &ovmf_file_path.1);
+    let args: Vec<String> = gen_ovmf_qemu_args(&ovmf_file_path.0, &ovmf_file_path.1, &log_file.to_str().unwrap().to_string());
     let env: Vec<(String, String)> = env::vars().collect();
     let qemu: Qemu = Qemu::init(args.as_slice(),env.as_slice()).unwrap();
     let mut emulator  = Emulator::new_with_qemu(qemu,

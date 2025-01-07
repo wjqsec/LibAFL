@@ -2,6 +2,7 @@ use log::info;
 use once_cell::sync::Lazy;
 use rand::seq::index;
 use serde::{Deserialize, Serialize};
+use std::borrow::Borrow;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::{path::PathBuf, process};
@@ -36,33 +37,26 @@ struct SmiGroupInfo {
     info : HashMap<u8, Vec<u8>>,
 }
 
-static mut SMI_GROUPS : *mut SmiGroupInfo = ptr::null_mut();
-
-pub fn init_smi_groups() {
-    unsafe {
-        SMI_GROUPS = Box::into_raw(Box::new(SmiGroupInfo {
+static SMI_GROUPS: Lazy<Mutex<SmiGroupInfo>> = Lazy::new(|| {
+    Mutex::new(
+        SmiGroupInfo {
             info : HashMap::new()
-        }));
-    }
-}
+        })
+});
 
 pub fn add_smi_group_info(group: u8, smi_index: u8) {
-    unsafe {
-        if ! (&mut (*SMI_GROUPS)).info.entry(group).or_insert(vec![]).contains(&smi_index) {
-            (&mut (*SMI_GROUPS)).info.entry(group).or_insert(vec![]).push(smi_index);
-        }
+    if !SMI_GROUPS.lock().unwrap().info.entry(group).or_insert(vec![]).contains(&smi_index) {
+        SMI_GROUPS.lock().unwrap().info.entry(group).or_insert(vec![]).push(smi_index);
     }
 }
 pub fn get_smi_by_random_group_index(group: u8, random_index: u8) -> Option<u8> {
-    unsafe {
-        let group = group % (&mut (*SMI_GROUPS)).info.len() as u8;
-        (&mut (*SMI_GROUPS)).info.get(&group).and_then(|v| v.get((random_index % v.len() as u8) as usize).copied())
-    }
+    let group = group %  SMI_GROUPS.lock().unwrap().info.len() as u8;
+    SMI_GROUPS.lock().unwrap().info.get(&group).and_then(|v| v.get((random_index % v.len() as u8) as usize).copied())
 }
 
 pub fn smi_group_info_to_file(filename : &PathBuf) {
     let file = File::create(filename).unwrap();
-    serde_json::to_writer(file, unsafe { &*SMI_GROUPS } ).unwrap();
+    serde_json::to_writer(file, &*SMI_GROUPS.lock().unwrap() ).unwrap();
 }
 
 pub fn smi_group_info_from_file(filename : &PathBuf) {
@@ -72,12 +66,9 @@ pub fn smi_group_info_from_file(filename : &PathBuf) {
 
     let mut info : SmiGroupInfo = serde_json::from_str(&buffer).unwrap();
     
-    unsafe {
-        if !SMI_GROUPS.is_null() {
-            let _ = Box::from_raw(SMI_GROUPS);
-        }
-        SMI_GROUPS = Box::into_raw(Box::new(info));
-    }
+    let mut smi_groups_lock = SMI_GROUPS.lock().unwrap(); // Lock the Mutex to get access
+
+    *smi_groups_lock = info;
 }
 
 // #[derive(Serialize, Deserialize)]
