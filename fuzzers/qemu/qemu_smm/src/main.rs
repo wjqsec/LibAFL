@@ -89,17 +89,20 @@ fn parse_duration(src: &str) -> Result<Duration, String> {
 enum SmmCommand {
     Fuzz {
         #[arg(short, long)]
-        ovmf_code: String,
+        ovmf_code: Option<String>,
     
         #[arg(short, long)]
-        ovmf_var: String,
+        ovmf_var: Option<String>,
+
+        #[arg(short, long, action = clap::ArgAction::SetFalse)]
+        use_snapshot: bool,
 
         #[arg(long, value_parser = parse_duration)]
         fuzz_time: Option<Duration>,
     },
     Run {
         #[arg(short, long)]
-        inputs: Option<String>,
+        inputs: String,
 
         #[arg(short, long, action = clap::ArgAction::SetTrue)]
         debug_trace: bool,
@@ -149,14 +152,18 @@ fn main() {
 
 
     match args.cmd {
-        SmmCommand::Fuzz { ovmf_code, ovmf_var, fuzz_time } => {
-            if !ovmf_code_copy.exists() {
+        SmmCommand::Fuzz { ovmf_code, ovmf_var, fuzz_time , use_snapshot} => {
+            if let Some(ovmf_code) = ovmf_code {
                 fs::copy(ovmf_code, ovmf_code_copy.clone()).unwrap();
             }
-            if !ovmf_var_copy.exists() {
+            if let Some(ovmf_var) = ovmf_var {
                 fs::copy(ovmf_var, ovmf_var_copy.clone()).unwrap();
             }
-            fuzz((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), (&seed_path, &corpus_path, &crash_path), &snapshot_path, fuzz_time, &log_file);
+            if !ovmf_code_copy.exists() || ! ovmf_var_copy.exists() {
+                error!("ovmf files not found");
+                exit_elegantly();
+            }
+            fuzz((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), (&seed_path, &corpus_path, &crash_path), &snapshot_path, fuzz_time, &log_file, use_snapshot);
         },
         SmmCommand::Run { inputs, debug_trace } => {
             if !ovmf_code_copy.exists() || !ovmf_var_copy.exists() {
@@ -166,12 +173,12 @@ fn main() {
             if debug_trace == true {
                 enable_debug();
             }
-            let md = fs::metadata(inputs.clone().unwrap().clone().as_str()).unwrap();
+            let md = fs::metadata(inputs.clone().as_str()).unwrap();
             if md.is_dir() {
-                let run_mode = RunMode::RunCopus(PathBuf::from_str(inputs.unwrap().clone().as_str()).unwrap());
+                let run_mode = RunMode::RunCopus(PathBuf::from_str(inputs.clone().as_str()).unwrap());
                 run_smi((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), &corpus_path,run_mode, &snapshot_path, &log_file);
             } else if md.is_file() {
-                let run_mode = RunMode::RunTestcase(PathBuf::from_str(inputs.unwrap().clone().as_str()).unwrap());
+                let run_mode = RunMode::RunTestcase(PathBuf::from_str(inputs.clone().as_str()).unwrap());
                 run_smi((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), &corpus_path,run_mode, &snapshot_path, &log_file);
             }
         }
@@ -232,7 +239,7 @@ fn get_smi_fuzz_phase_dirs(corpus_dir : &PathBuf) -> PathBuf {
     corpus_dir.join(PathBuf::from(format!("smi_phase_corpus/")))
 }
 
-fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) : (&PathBuf, &PathBuf, &PathBuf), snapshot_bin : &PathBuf, fuzz_time : Option<Duration>, log_file : &PathBuf) {
+fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) : (&PathBuf, &PathBuf, &PathBuf), snapshot_bin : &PathBuf, fuzz_time : Option<Duration>, log_file : &PathBuf, use_snapshot : bool) {
     let args: Vec<String> = gen_ovmf_qemu_args(&ovmf_file_path.0, &ovmf_file_path.1, &log_file.to_str().unwrap().to_string());
     let env: Vec<(String, String)> = env::vars().collect();
     let qemu: Qemu = Qemu::init(args.as_slice(),env.as_slice()).unwrap();
@@ -272,7 +279,7 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
     }
     
 
-    if snapshot_bin.exists() {
+    if snapshot_bin.exists() && use_snapshot {
         info!("found snapshot file, start from snapshot!");
         FuzzerSnapshot::restore_from_file(qemu, snapshot_bin);
         let mut block_id = emulator.modules_mut().blocks(
