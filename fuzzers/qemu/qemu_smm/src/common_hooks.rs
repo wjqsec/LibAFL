@@ -590,37 +590,40 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_COMMBUF_FUZZ_DATA => {
-            let smi_index = arg1;
-            let smi_invoke_times = arg2;
-            match fuzz_input.get_commbuf_fuzz_data(smi_index, smi_invoke_times) {
-                Ok((fuzz_input_ptr,  claimed_len, actual_len)) => { 
-                    let written_len = min(unsafe {COMMBUF_SIZE} as usize, actual_len);
-                    unsafe { COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, written_len); }
-                    ret = claimed_len as u64;
-                },
-                Err(io_err) => {    
-                    match io_err {
-                        StreamError::StreamNotFound(id) => {
-                            fuzz_input.generate_init_stream(id);
-                            match fuzz_input.get_commbuf_fuzz_data(smi_index, smi_invoke_times) {
-                                Ok((fuzz_input_ptr, claimed_len, actual_len)) => { 
-                                    let written_len = min(unsafe {COMMBUF_SIZE} as usize, actual_len);
-                                    unsafe { COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, written_len); }
-                                    ret = claimed_len as u64;
-                                },
-                                _ => {    
-                                    error!("comm buffer generate error");
-                                    exit_elegantly();
+            if unsafe {IN_FUZZ} {
+                let smi_index = arg1;
+                let smi_invoke_times = arg2;
+                match fuzz_input.get_commbuf_fuzz_data(smi_index, smi_invoke_times) {
+                    Ok((fuzz_input_ptr,  claimed_len, actual_len)) => { 
+                        let written_len = min(unsafe {COMMBUF_SIZE} as usize, actual_len);
+                        unsafe { COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, written_len); }
+                        ret = claimed_len as u64;
+                    },
+                    Err(io_err) => {    
+                        match io_err {
+                            StreamError::StreamNotFound(id) => {
+                                fuzz_input.generate_init_stream(id);
+                                match fuzz_input.get_commbuf_fuzz_data(smi_index, smi_invoke_times) {
+                                    Ok((fuzz_input_ptr, claimed_len, actual_len)) => { 
+                                        let written_len = min(unsafe {COMMBUF_SIZE} as usize, actual_len);
+                                        unsafe { COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, written_len); }
+                                        ret = claimed_len as u64;
+                                    },
+                                    _ => {    
+                                        error!("comm buffer generate error");
+                                        exit_elegantly();
+                                    }
                                 }
-                            }
-                        },
-                        _ => {
-                            ret = 0;
-                        },
+                            },
+                            _ => {
+                                ret = 0;
+                            },
+                        }
                     }
                 }
+            } else {
+                ret = 0;
             }
-            
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_PCD_FUZZ_DATA => {
             let len = arg1;

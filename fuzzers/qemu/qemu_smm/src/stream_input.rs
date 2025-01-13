@@ -49,7 +49,7 @@ impl StreamInfo {
         StreamInfo::DramStream(DRAM_STREAM_MASK, 256, 1024, 3)
     }
     fn new_comm_buf_stream(index : u64, times : u64) -> Self {
-        StreamInfo::CommBufStream(COMMBUF_STREAM_MASK | ((index as u128) << 32) | (times as u128), 128, 256, 1)
+        StreamInfo::CommBufStream(COMMBUF_STREAM_MASK | ((index as u128) << 32) | (times as u128), 128, 256, 5)
     }
     fn new_msr_stream() -> Self {
         StreamInfo::MsrStream(MSR_STREAM_MASK, 64, 256, 1)
@@ -337,6 +337,8 @@ impl StreamInputs {
             },
         }
     }
+
+
     pub fn get_commbuf_fuzz_data(&mut self, index : u64, times : u64) -> Result<(*const u8, usize, usize), StreamError> {
         let stream_info = StreamInfo::new_comm_buf_stream(index, times);
         match self.inputs.entry(stream_info.get_id()) {

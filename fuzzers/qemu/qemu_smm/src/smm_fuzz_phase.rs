@@ -240,7 +240,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
 
     let mut state = StdState::new(
         StdRand::with_seed(current_nanos()),
-        CachedOnDiskCorpus::<MultipartInput<BytesInput>>::new(corpus_dir.clone(),10 * 4096).unwrap(),
+        CachedOnDiskCorpus::<MultipartInput<BytesInput>>::new(corpus_dir.clone(),5 * 4096).unwrap(),
         OnDiskCorpus::<MultipartInput<BytesInput>>::new(objective_dir.clone()).unwrap(),
         &mut feedback,
         // Same for objective feedbacks
@@ -294,6 +294,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         smi_group_info_to_file(&smi_metadata_fullpath);
     }
 
+
     for i in 0..( state.corpus().last().unwrap().0 + 1) {
         let input = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone().input().clone().unwrap();
         fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &input);
@@ -314,12 +315,22 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
             let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
             smi_group_info_to_file(&smi_metadata_fullpath);
         }
+
         if num_solutions.is_some() {
             for i in num_solutions.unwrap()..(state.solutions().last().unwrap().0 + 1) {
                 let testcase = state.solutions().get(CorpusId::from(i)).unwrap().clone().take().clone();
                 let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
                 let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
                 smi_group_info_to_file(&smi_metadata_fullpath);
+            }
+        } else {
+            if let Some(end_num_solutions) = state.solutions().last() {
+                for i in 0..(end_num_solutions.0 + 1) {
+                    let testcase = state.solutions().get(CorpusId::from(i)).unwrap().clone().take().clone();
+                    let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
+                    let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
+                    smi_group_info_to_file(&smi_metadata_fullpath);
+                }
             }
         }
         

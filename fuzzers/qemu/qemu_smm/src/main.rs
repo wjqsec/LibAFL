@@ -94,7 +94,7 @@ enum SmmCommand {
         #[arg(short, long)]
         ovmf_var: Option<String>,
 
-        #[arg(short, long, action = clap::ArgAction::SetFalse)]
+        #[arg(short, long, action = clap::ArgAction::SetTrue)]
         use_snapshot: bool,
 
         #[arg(long, value_parser = parse_duration)]

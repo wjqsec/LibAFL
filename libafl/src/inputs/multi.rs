@@ -231,6 +231,6 @@ where
             .collect::<Vec<_>>()
             .join(",");
         content.hash(&mut h);
-        format!("{}-{}",self.ids.len().to_string(), h.finish().to_string())
+        format!("{}-{}-{}",id.unwrap(), self.ids.len().to_string(), h.finish().to_string())
     }
 }
