@@ -351,7 +351,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
 } 
 
 
-pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (), StdState<MultipartInput<BytesInput>, InMemoryCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, InMemoryCorpus<MultipartInput<BytesInput>>>>)
+pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (), StdState<MultipartInput<BytesInput>, InMemoryCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, InMemoryCorpus<MultipartInput<BytesInput>>>>) -> Vec<(u64, usize)>
 {
     let qemu = emulator.qemu();
     let cpu: CPU = qemu.first_cpu().unwrap();
@@ -492,7 +492,7 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
         IN_SMI_FUZZ_PHASE = true;
     }
 
-    
+    let mut ret = Vec::new();
     match input {
         RunMode::RunCopus(corpus) => {
             let mut corpus_inputs = Vec::new();
@@ -524,9 +524,10 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
             });
             for input in corpus_inputs.iter() {
                 smi_group_info_from_file(&PathBuf::from(input.2.clone()));
-                let input = MultipartInput::from_file(input.0.clone()).unwrap();
-                fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input);
-                info!("bbl {}",num_bbl_covered());
+                let input_testcase = MultipartInput::from_file(input.0.clone()).unwrap();
+                fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input_testcase);
+                info!("bbl {} {}",input.3, num_bbl_covered());
+                ret.push((input.3, num_bbl_covered()));
             }
         },
         RunMode::RunTestcase(testcase) => {
@@ -534,4 +535,5 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
             fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input);
         },
     }
+    return ret;
 }

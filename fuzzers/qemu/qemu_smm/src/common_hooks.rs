@@ -750,28 +750,40 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_SMM_MODULE_INFO => {
-            let uuid_addr = arg1;
+            let addr = arg1;
             let start_addr = arg2;
             let end_addr = arg3;
-            let uuid_phy_addr = cpu.get_phys_addr_with_offset(uuid_addr).unwrap();
-            let uuid_host_addr = cpu.get_host_addr(uuid_phy_addr) as *mut u128;
-            let module_uuid = Uuid::from_bytes_le(unsafe { (*uuid_host_addr).to_le_bytes() });
-            info!("[Module] {} {:#x}-{:#x}", module_uuid.to_string(), start_addr, end_addr);
+            let module_guid_phy_addr = cpu.get_phys_addr_with_offset(addr).unwrap();
+            let module_guid_host_addr = cpu.get_host_addr(module_guid_phy_addr) as *mut u128;
+            let module_guid = Uuid::from_bytes_le(unsafe { (*module_guid_host_addr).to_le_bytes() });
+            info!("[Module] {} {:#x}-{:#x}", module_guid.to_string(), start_addr, end_addr);
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_SMI_INFO => {
             let index = arg1;
             let addr = arg2;
             let smi_guid_phy_addr = cpu.get_phys_addr_with_offset(addr).unwrap();
-            let smi_uuid_host_addr = cpu.get_host_addr(smi_guid_phy_addr) as *mut u128;
-            let smi_uuid = Uuid::from_bytes_le(unsafe { (*smi_uuid_host_addr).to_le_bytes() });
-            info!("[SMI] {} {}",index, smi_uuid.to_string());
+            let smi_guid_host_addr = cpu.get_host_addr(smi_guid_phy_addr) as *mut u128;
+            let smi_guid = Uuid::from_bytes_le(unsafe { (*smi_guid_host_addr).to_le_bytes() });
+            info!("[SMI] {} {}",index, smi_guid.to_string());
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_SMM_FUZZ_GROUP => {
             let group = arg1 as u8;
             let smi_index = arg2 as u8;
             add_smi_group_info(group, smi_index);
         },
-        LIBAFL_QEMU_COMMAND_SMM_GET_FUZZ_SMI_INDEX => {
+        LIBAFL_QEMU_COMMAND_SMM_REPORT_SKIP_MODULE_INFO => {
+            let addr = arg1;
+            let module_guid_phy_addr = cpu.get_phys_addr_with_offset(addr).unwrap();
+            let module_guid_host_addr = cpu.get_host_addr(module_guid_phy_addr) as *mut u128;
+            let module_guid = Uuid::from_bytes_le(unsafe { (*module_guid_host_addr).to_le_bytes() });
+            info!("[SKIP] {}",module_guid.to_string());
+        },
+        LIBAFL_QEMU_COMMAND_SMM_REPORT_UNLOAD_MODULE_INFO => {
+            let addr = arg1;
+            let module_guid_phy_addr = cpu.get_phys_addr_with_offset(addr).unwrap();
+            let module_guid_host_addr = cpu.get_host_addr(module_guid_phy_addr) as *mut u128;
+            let module_guid = Uuid::from_bytes_le(unsafe { (*module_guid_host_addr).to_le_bytes() });
+            info!("[UNLOAD] {}",module_guid.to_string());
         },
         _ => { 
             error!("backdoor wrong cmd {:}",cmd); 
