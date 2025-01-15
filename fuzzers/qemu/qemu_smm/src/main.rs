@@ -115,7 +115,10 @@ enum SmmCommand {
 
         #[arg(short, long)]
         output: Option<String>,
-    }
+    },
+    Report {
+
+    },
 }
 
 
@@ -132,6 +135,7 @@ struct Args {
 
 fn main() {
     env_logger::init();
+
     let args = Args::parse();
 
     let project_path = Path::new(args.proj.as_str());
@@ -196,7 +200,11 @@ fn main() {
                 parse_filter_file(&PathBuf::from_str(filter.as_str()).unwrap());
             }
             coverage((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), &corpus_path, &snapshot_path, &log_file, output);  
+        },
+        SmmCommand::Report { } => {
+            report((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), &snapshot_path, &log_file);
         }
+
     }
 }
 
@@ -601,4 +609,50 @@ fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_
         }
     }
     exit_elegantly();
+}
+
+fn report(ovmf_file_path : (String, String), snapshot_bin : &PathBuf, log_file : &PathBuf) {
+    if !snapshot_bin.exists() {
+        error!("snapshot not found, unable to replay");
+        exit_elegantly();
+    }
+    let args: Vec<String> = gen_ovmf_qemu_args(&ovmf_file_path.0, &ovmf_file_path.1, &log_file.to_str().unwrap().to_string());
+    let env: Vec<(String, String)> = env::vars().collect();
+    let qemu: Qemu = Qemu::init(args.as_slice(),env.as_slice()).unwrap();
+    let mut emulator  = Emulator::new_with_qemu(qemu,
+        tuple_list!(),
+        NopEmulatorExitHandler,
+        NopCommandManager)
+        .unwrap();
+    let cpu = qemu.first_cpu().unwrap();
+    
+    let backdoor_id = emulator.modules_mut().backdoor(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, addr : GuestAddr| {
+        let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
+        backdoor_common(fuzz_input, modules.qemu().first_cpu().unwrap());
+    })));
+
+    let mut snapshot = SnapshotKind::None;
+    unsafe {
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),10000000,false, false);
+        if let Ok(qemu_exit_reason) = qemu_exit_reason {
+            if let QemuExitReason::SyncExit = qemu_exit_reason  {
+                if cmd == LIBAFL_QEMU_COMMAND_END {  // sync exit
+                    if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_START {
+                        info!("first breakpoint hit");
+                    }
+                }
+            }
+        }
+    }
+    if let SnapshotKind::None = snapshot {
+        error!("first breakpoint hit strange place");
+        exit_elegantly();
+    }
+    FuzzerSnapshot::restore_from_file(qemu, snapshot_bin);
+    let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),1000000000,false, false);
+    exit_elegantly();
+
+    let run_mode = RunMode::None;
+    
+    let _ = smm_phase_run(run_mode.clone(), &mut emulator);
 }

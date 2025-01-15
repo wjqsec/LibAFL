@@ -534,6 +534,9 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
             let input = MultipartInput::from_file(testcase.clone()).unwrap();
             fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input);
         },
+        _ => {
+            
+        }
     }
     return ret;
 }
