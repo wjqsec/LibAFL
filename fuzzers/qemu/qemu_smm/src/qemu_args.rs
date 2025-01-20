@@ -1,10 +1,14 @@
 use std::vec::*;
 use std::string::*;
 use std::ffi::{CString, CStr};
+use std::path::Path;
 
 const OVMF_MODE : &str = "RELEASE";
 pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String, log : &String) -> Vec<String>
 {
+    let project_dir = env!("CARGO_MANIFEST_DIR");
+    let mut qemu_firmware_dir = Path::new(project_dir).join("qemu_smm");
+    
     vec![
         "qemu-system-x86_64".to_string(),
         "-machine".to_string(),
@@ -20,7 +24,7 @@ pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String, log
         "-global".to_string(),
         "isa-debugcon.iobase=0x402".to_string(),
         "-L".to_string(),
-        "/usr/local/share/qemu_smm/".to_string(),
+        qemu_firmware_dir.to_string_lossy().to_string(),
         "-nographic".to_string(),
     ]
 }
