@@ -157,9 +157,9 @@ pub fn post_io_read_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : 
         if IN_FUZZ == false || io_err == 0 {
             return;
         }
-        if pc < CURRENT_MODULE_ADDR || pc >= CURRENT_MODULE_END {
-            return;
-        }
+        // if pc < CURRENT_MODULE_ADDR || pc >= CURRENT_MODULE_END {
+        //     return;
+        // }
     }
     post_io_read_common(pc, addr, size, data, fuzz_input, cpu);
 }
@@ -205,9 +205,9 @@ pub fn pre_io_write_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : 
         if IN_FUZZ == false {
             return;
         }
-        if pc < CURRENT_MODULE_ADDR || pc >= CURRENT_MODULE_END {
-            return;
-        }
+        // if pc < CURRENT_MODULE_ADDR || pc >= CURRENT_MODULE_END {
+        //     return;
+        // }
     }
     pre_io_write_common(base, offset, size, data, handled, cpu);
 }
@@ -355,17 +355,17 @@ pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , o
         if IN_FUZZ == false {
             return;
         }
-        if pc < CURRENT_MODULE_ADDR || pc >= CURRENT_MODULE_END {
-            return;
-        }
-        if addr < 0xe0000000 {  // higher than this, could be fuzzed
-            if  addr < HOB_ADDR  || addr >= (HOB_ADDR + HOB_SIZE) { // non HOB accees not to mutate
+        // if pc < CURRENT_MODULE_ADDR || pc >= CURRENT_MODULE_END {
+        //     return;
+        // }
+        if addr < 0xe0000000 {  
+            if  addr < HOB_ADDR  || addr >= (HOB_ADDR + HOB_SIZE) {  // hob must be fuzzed
                 return;
             }
             if addr >= HOB_ADDR + 2 && addr < HOB_ADDR + 8 { // HOB length not to mutate
                 return;
             }
-        } else {
+        } else {  // higher than 0xe0000000, might be fuzzed
             if unsafe {!MEM_SHOULD_FUZZ_SWITCH} {
                 return;
             }     
