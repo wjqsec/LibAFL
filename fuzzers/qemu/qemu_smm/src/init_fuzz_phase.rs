@@ -473,7 +473,7 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
         let input_testcase = MultipartInput::from_file(input.0.clone()).unwrap();
         fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input_testcase);
         ret.push((input.2, num_bbl_covered()));
-        info!("bbl {} {}",input.3, num_bbl_covered());
+        info!("bbl {} {}",input.2, num_bbl_covered());
     }
 
 
