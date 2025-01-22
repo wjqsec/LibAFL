@@ -15,7 +15,6 @@ use crate::smi_info::*;
 use crate::coverage::*;
 use crate::smm_fuzz_qemu_cmds::*;
 
-pub static mut IN_SMI_FUZZ_PHASE : bool = false;
 
 pub static mut IN_FUZZ : bool = false;
 
@@ -26,7 +25,6 @@ pub static mut GLOB_INPUT : *mut StreamInputs = std::ptr::null_mut() as *mut Str
 static mut NEXT_EXIT : Option<SmmQemuExit> = None;  // use this variblae to prevent memory leak
 
 pub static mut DUMMY_MEMORY_VIRT_ADDR : u64 = 0;
-pub static mut DUMMY_MEMORY_HOST_PTR : *mut u64 = 0 as *mut u64;
 
 static mut SMI_SELECT_BUFFER_ADDR : u64 = 0;
 static mut SMI_SELECT_BUFFER_SIZE : u64 = 0;
@@ -59,15 +57,6 @@ pub fn set_exec_count(val :u64) {
     }
 }
 
-static mut CURRENT_MODULE_ADDR : u64 = 0;
-static mut CURRENT_MODULE_END : u64 = 0;
-pub fn set_current_module(addr : u64, end : u64) {
-    unsafe {
-        CURRENT_MODULE_ADDR = addr;
-        CURRENT_MODULE_END = end;
-    }
-    info!("now processing module {:#x}-{:#x}",addr,end);
-}
 
 fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut u8, 
                        fuzz_input : &mut StreamInputs, cpu : CPU)
@@ -133,9 +122,6 @@ pub fn post_io_read_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : 
         if IN_FUZZ == false || io_err == 0 {
             return;
         }
-        // if pc < CURRENT_MODULE_ADDR || pc >= CURRENT_MODULE_END {
-        //     return;
-        // }
     }
     post_io_read_common(pc, addr, size, data, fuzz_input, cpu);
 }
@@ -181,9 +167,6 @@ pub fn pre_io_write_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : 
         if IN_FUZZ == false {
             return;
         }
-        // if pc < CURRENT_MODULE_ADDR || pc >= CURRENT_MODULE_END {
-        //     return;
-        // }
     }
     pre_io_write_common(base, offset, size, data, handled, cpu);
 }
@@ -205,8 +188,8 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
         0 => {
             match fuzz_input.get_dram_fuzz_data(addr, size, consistent_access) {
                 Ok(data) => { 
-                    unsafe { 
-                        *DUMMY_MEMORY_HOST_PTR = data;
+                    unsafe {
+                        cpu.write_mem(DUMMY_MEMORY_VIRT_ADDR, &data.to_le_bytes()); 
                         *out_addr = DUMMY_MEMORY_VIRT_ADDR;
                     }
                 },
@@ -217,7 +200,7 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
                             match fuzz_input.get_dram_fuzz_data(addr,size, consistent_access) {
                                 Ok(data) => { 
                                     unsafe { 
-                                        *DUMMY_MEMORY_HOST_PTR = data;
+                                        cpu.write_mem(DUMMY_MEMORY_VIRT_ADDR, &data.to_le_bytes()); 
                                         *out_addr = DUMMY_MEMORY_VIRT_ADDR;
                                     }
                                 },
@@ -234,7 +217,7 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
                                 match fuzz_input.get_dram_fuzz_data(addr, size, consistent_access) {
                                     Ok(data) => { 
                                         unsafe { 
-                                            *DUMMY_MEMORY_HOST_PTR = data;
+                                            cpu.write_mem(DUMMY_MEMORY_VIRT_ADDR, &data.to_le_bytes()); 
                                             *out_addr = DUMMY_MEMORY_VIRT_ADDR;
                                             NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
                                         }
@@ -246,7 +229,7 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
                                 }
                             } else {
                                 unsafe {
-                                    (DUMMY_MEMORY_HOST_PTR as *mut u8).copy_from(append_data.as_ptr(), need_len);
+                                    cpu.write_mem(DUMMY_MEMORY_VIRT_ADDR, append_data.as_slice()); 
                                     *out_addr = DUMMY_MEMORY_VIRT_ADDR;
                                 }
                             }
@@ -331,9 +314,6 @@ pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , o
         if IN_FUZZ == false {
             return;
         }
-        // if pc < CURRENT_MODULE_ADDR || pc >= CURRENT_MODULE_END {
-        //     return;
-        // }
         if addr < 0xe0000000 {  
             if  addr < HOB_ADDR  || addr >= (HOB_ADDR + HOB_SIZE) {  // hob must be fuzzed
                 return;
@@ -456,12 +436,8 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
     match cmd {
         LIBAFL_QEMU_COMMAND_SMM_REPORT_DUMMY_MEM => {
             unsafe {
-                let dummy_virt_addr = arg1;
-                DUMMY_MEMORY_VIRT_ADDR = dummy_virt_addr;
-                let dummy_phy_addr = cpu.get_phys_addr_with_offset(dummy_virt_addr).unwrap();
-                let dummy_host_addr = cpu.get_host_addr(dummy_phy_addr);
-                DUMMY_MEMORY_HOST_PTR = dummy_host_addr as *mut u64;
-                info!("dummy memory info {:#x} {:#x} {:?}",dummy_virt_addr,dummy_phy_addr,dummy_host_addr);
+                DUMMY_MEMORY_VIRT_ADDR = arg1;
+                info!("dummy memory info {:#x}",DUMMY_MEMORY_VIRT_ADDR);
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_SMI_SELECT_INFO => {
@@ -606,12 +582,10 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             let addr = arg2;
             if unsafe { IN_FUZZ } {
                 ret = 1;
-                let pcd_phy_addr = cpu.get_phys_addr_with_offset(addr).unwrap();
-                let pcd_host_addr = cpu.get_host_addr(pcd_phy_addr);
                 match fuzz_input.get_pcd_fuzz_data(len) {
                     Ok((fuzz_input_ptr)) => { 
                         unsafe {
-                            pcd_host_addr.copy_from(fuzz_input_ptr, len as usize);
+                            cpu.write_mem(addr, slice::from_raw_parts(fuzz_input_ptr, len as usize));
                         }
                     },
                     Err(io_err) => {    
@@ -621,7 +595,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                 match fuzz_input.get_pcd_fuzz_data(len) {
                                     Ok((fuzz_input_ptr)) => { 
                                         unsafe {
-                                            pcd_host_addr.copy_from(fuzz_input_ptr, len as usize);
+                                            cpu.write_mem(addr, slice::from_raw_parts(fuzz_input_ptr, len as usize));
                                         }
                                     },
                                     _ => {    
@@ -633,7 +607,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                             StreamError::StreamOutof(id, need_len) => {
                                 let append_data = fuzz_input.append_temp_stream(id, need_len);
                                 unsafe {
-                                    pcd_host_addr.copy_from(append_data.as_ptr(), need_len as usize);
+                                    cpu.write_mem(addr, append_data.as_slice());
                                 }
                                 
                             },
@@ -666,16 +640,14 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_VARIABLE_FUZZ_DATA => {
+            let addr = arg1;
             let var_size = arg2;
-            let variable_phy_addr = cpu.get_phys_addr_with_offset(arg1).unwrap();
-            let variable_host_addr = cpu.get_host_addr(variable_phy_addr);
-            
             if unsafe { IN_FUZZ } {
                 ret = 1;
                 match fuzz_input.get_variable_fuzz_data(var_size) {
                     Ok((fuzz_input_ptr)) => { 
                         unsafe {
-                            variable_host_addr.copy_from(fuzz_input_ptr, var_size as usize);
+                            cpu.write_mem(addr, slice::from_raw_parts(fuzz_input_ptr, var_size as usize));
                         }
                     },
                     Err(io_err) => {    
@@ -685,7 +657,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                 match fuzz_input.get_variable_fuzz_data(var_size) {
                                     Ok((fuzz_input_ptr)) => { 
                                         unsafe {
-                                            variable_host_addr.copy_from(fuzz_input_ptr, var_size as usize);
+                                            cpu.write_mem(addr, slice::from_raw_parts(fuzz_input_ptr, var_size as usize));
                                         }
                                     },
                                     _ => {    
@@ -697,7 +669,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                             StreamError::StreamOutof(id, need_len) => {
                                 let append_data = fuzz_input.append_temp_stream(id, need_len);
                                 unsafe {
-                                    variable_host_addr.copy_from(append_data.as_ptr(), need_len);
+                                    cpu.write_mem(addr, append_data.as_slice());
                                 }
                             },
                             _ => {
@@ -727,17 +699,22 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             let addr = arg1;
             let start_addr = arg2;
             let end_addr = arg3;
-            let module_guid_phy_addr = cpu.get_phys_addr_with_offset(addr).unwrap();
-            let module_guid_host_addr = cpu.get_host_addr(module_guid_phy_addr) as *mut u128;
-            let module_guid = Uuid::from_bytes_le(unsafe { (*module_guid_host_addr).to_le_bytes() });
+            let mut guid_buf : [u8; 16] = [0 ; 16];
+            unsafe {
+                cpu.read_mem(addr,&mut guid_buf);
+            }
+            let module_guid = Uuid::from_bytes(guid_buf);
+            module_range(&module_guid, start_addr, end_addr);
             info!("[Module] {} {:#x}-{:#x}", module_guid.to_string(), start_addr, end_addr);
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_SMI_INFO => {
             let index = arg1;
             let addr = arg2;
-            let smi_guid_phy_addr = cpu.get_phys_addr_with_offset(addr).unwrap();
-            let smi_guid_host_addr = cpu.get_host_addr(smi_guid_phy_addr) as *mut u128;
-            let smi_guid = Uuid::from_bytes_le(unsafe { (*smi_guid_host_addr).to_le_bytes() });
+            let mut guid_buf : [u8; 16] = [0 ; 16];
+            unsafe {
+                cpu.read_mem(addr,&mut guid_buf);
+            }
+            let smi_guid = Uuid::from_bytes(guid_buf);
             info!("[SMI] {} {}",index, smi_guid.to_string());
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_SMM_FUZZ_GROUP => {
@@ -747,16 +724,20 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_SKIP_MODULE_INFO => {
             let addr = arg1;
-            let module_guid_phy_addr = cpu.get_phys_addr_with_offset(addr).unwrap();
-            let module_guid_host_addr = cpu.get_host_addr(module_guid_phy_addr) as *mut u128;
-            let module_guid = Uuid::from_bytes_le(unsafe { (*module_guid_host_addr).to_le_bytes() });
+            let mut guid_buf : [u8; 16] = [0 ; 16];
+            unsafe {
+                cpu.read_mem(addr,&mut guid_buf);
+            }
+            let module_guid = Uuid::from_bytes(guid_buf);
             info!("[SKIP] {}",module_guid.to_string());
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_UNLOAD_MODULE_INFO => {
             let addr = arg1;
-            let module_guid_phy_addr = cpu.get_phys_addr_with_offset(addr).unwrap();
-            let module_guid_host_addr = cpu.get_host_addr(module_guid_phy_addr) as *mut u128;
-            let module_guid = Uuid::from_bytes_le(unsafe { (*module_guid_host_addr).to_le_bytes() });
+            let mut guid_buf : [u8; 16] = [0 ; 16];
+            unsafe {
+                cpu.read_mem(addr,&mut guid_buf);
+            }
+            let module_guid = Uuid::from_bytes(guid_buf);
             info!("[UNLOAD] {}",module_guid.to_string());
         },
         _ => { 

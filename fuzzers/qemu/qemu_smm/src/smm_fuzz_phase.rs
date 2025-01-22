@@ -81,6 +81,8 @@ static mut CRASH_TIMES : u64 = 0;
 static mut STREAM_OVER_TIMES : u64 = 0;
 static mut ASSERT_TIMES : u64 = 0;
 
+static mut END_FUZZ : bool = false;
+
 const SMI_FUZZ_TIMEOUT_BBL : u64 = 100000;
 
 fn gen_init_random_seed(dir : &PathBuf) {
@@ -133,7 +135,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         error!("run to fuzz point error");
         exit_elegantly();
     }
-
+    
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         let mut inputs = StreamInputs::from_multiinput(input);
         unsafe {  
@@ -191,8 +193,10 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
                 exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
+                unsafe {
+                    END_FUZZ = true;
+                }
                 error!("ctrl-C");
-                exit_elegantly();
                 exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason {
@@ -341,7 +345,9 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
             fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &input);
             let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),30000000, true, false);
         }
-
+        if unsafe {END_FUZZ} {
+            break;
+        }
         if let Some(fuzz_time) = fuzz_time {
             if (current_time().as_secs() - state.start_time().as_secs()) > fuzz_time.as_secs() {
                 info!("Fuzz {:?} Finished",fuzz_time);

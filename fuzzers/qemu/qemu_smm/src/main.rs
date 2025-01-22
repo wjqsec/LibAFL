@@ -111,7 +111,7 @@ enum SmmCommand {
     },
     Coverage {
         #[arg(short, long)]
-        filter: Option<String>,
+        cov_module: Option<String>,
 
         #[arg(short, long)]
         output: Option<String>,
@@ -195,9 +195,9 @@ fn main() {
                 run((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), &corpus_path,run_mode, &snapshot_path, &log_file);
             }
         },
-        SmmCommand::Coverage { filter, output } => {
-            if let Some(filter) = filter {
-                parse_filter_file(&PathBuf::from_str(filter.as_str()).unwrap());
+        SmmCommand::Coverage { cov_module, output } => {
+            if let Some(cov_module) = cov_module {
+                parse_cov_module_file(&PathBuf::from_str(cov_module.as_str()).unwrap());
             }
             coverage((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), &corpus_path, &snapshot_path, &log_file, output);  
         },
@@ -289,7 +289,6 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
                 if cmd == LIBAFL_QEMU_COMMAND_END {  // sync exit
                     if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_START {
                         info!("first breakpoint hit");
-                        set_current_module(arg1, arg2);
                         snapshot = SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
                     }
                 }
@@ -507,7 +506,6 @@ fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_
                 if cmd == LIBAFL_QEMU_COMMAND_END {  // sync exit
                     if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_START {
                         info!("first breakpoint hit");
-                        set_current_module(arg1, arg2);
                         snapshot = SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
                     }
                 }
