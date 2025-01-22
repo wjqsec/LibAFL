@@ -15,7 +15,9 @@ use std::{
     fmt::{Debug, Formatter},
     marker::PhantomData,
 };
-
+use libafl_bolts::{
+    current_time, impl_serdeany, tuples::{Handle, Handled, MatchNameRef}
+};
 use libafl::{
     inputs::{BytesInput, MultipartInput},
     corpus::Testcase,
@@ -42,6 +44,11 @@ static SMI_GROUPS: Lazy<Mutex<SmiGroupInfo>> = Lazy::new(|| {
         SmiGroupInfo {
             info : HashMap::new()
         })
+});
+
+
+static FUZZER_START_TIME: Lazy<u128> = Lazy::new(|| {
+    current_time().as_micros()
 });
 
 pub fn add_smi_group_info(group: u8, smi_index: u8) {
@@ -71,62 +78,59 @@ pub fn smi_group_info_from_file(filename : &PathBuf) {
     *smi_groups_lock = info;
 }
 
-// #[derive(Serialize, Deserialize)]
-// pub struct SmiMetadataFileFeedback;
+#[derive(Serialize, Deserialize)]
+pub struct SmiGlobalFoundTimeMetadataFeedback;
 
-// impl<S> Feedback<S> for SmiMetadataFileFeedback
-// where
-//     S: HasCurrentTestcase<MultipartInput<BytesInput>> + State<Input = MultipartInput<BytesInput>> + HasCorpus<Input = MultipartInput<BytesInput>> + HasStartTime,
-// {
-//     fn append_metadata<EM, OT>(
-//             &mut self,
-//             state: &mut S,
-//             manager: &mut EM,
-//             observers: &OT,
-//             testcase: &mut Testcase<<S>::Input>,
-//         ) -> Result<(), Error>
-//         where
-//             OT: ObserversTuple<S>,
-//             EM: EventFirer<State = S>, {
-//         let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
-//         let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
-//         smi_group_info_to_file(&smi_metadata_fullpath);
-//         Ok(())
-//     }
+impl<S> Feedback<S> for SmiGlobalFoundTimeMetadataFeedback
+where
+    S: HasCurrentTestcase<MultipartInput<BytesInput>> + State<Input = MultipartInput<BytesInput>> + HasCorpus<Input = MultipartInput<BytesInput>> + HasStartTime,
+{
+    fn append_metadata<EM, OT>(
+            &mut self,
+            state: &mut S,
+            manager: &mut EM,
+            observers: &OT,
+            testcase: &mut Testcase<<S>::Input>,
+        ) -> Result<(), Error>
+        where
+            OT: ObserversTuple<S>,
+            EM: EventFirer<State = S>, {
+        testcase.set_found_time(current_time().as_micros() - unsafe {*FUZZER_START_TIME});
+        Ok(())
+    }
 
-//     fn discard_metadata(&mut self, _state: &mut S, _input: &<S>::Input) -> Result<(), Error> {
-//         Ok(())
-//     }
+    fn discard_metadata(&mut self, _state: &mut S, _input: &<S>::Input) -> Result<(), Error> {
+        Ok(())
+    }
 
-//     fn init_state(&mut self, _state: &mut S) -> Result<(), Error> {
-//         Ok(())
-//     }
-//     fn is_interesting<EM, OT>(
-//             &mut self,
-//             state: &mut S,
-//             manager: &mut EM,
-//             input: &<S>::Input,
-//             observers: &OT,
-//             exit_kind: &ExitKind,
-//         ) -> Result<bool, Error>
-//         where
-//             EM: EventFirer<State = S>,
-//             OT: ObserversTuple<S> {
-//         Ok(false)
-//     }
-// }
+    fn init_state(&mut self, _state: &mut S) -> Result<(), Error> {
+        Ok(())
+    }
+    fn is_interesting<EM, OT>(
+            &mut self,
+            state: &mut S,
+            manager: &mut EM,
+            input: &<S>::Input,
+            observers: &OT,
+            exit_kind: &ExitKind,
+        ) -> Result<bool, Error>
+        where
+            EM: EventFirer<State = S>,
+            OT: ObserversTuple<S> {
+        Ok(false)
+    }
+}
 
-// impl Named for SmiMetadataFileFeedback {
-//     #[inline]
-//     fn name(&self) -> &Cow<'static, str> {
-//         &Cow::Borrowed("SmiMetadataFileFeedback")
-//     }
-// }
+impl Named for SmiGlobalFoundTimeMetadataFeedback {
+    #[inline]
+    fn name(&self) -> &Cow<'static, str> {
+        &Cow::Borrowed("SmiGlobalFoundTimeMetadataFeedback")
+    }
+}
 
-// impl SmiMetadataFileFeedback {
-//     /// Creates a new [`TimeFeedback`], deciding if the given [`TimeObserver`] value of a run is interesting.
-//     #[must_use]
-//     pub fn new() -> Self {
-//         SmiMetadataFileFeedback
-//     }
-// }
+impl SmiGlobalFoundTimeMetadataFeedback {
+    #[must_use]
+    pub fn new() -> Self {
+        SmiGlobalFoundTimeMetadataFeedback
+    }
+}

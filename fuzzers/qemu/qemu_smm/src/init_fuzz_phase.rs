@@ -8,13 +8,14 @@ use log::*;
 use std::ptr;
 use rand::Rng;
 use libafl::{
-    corpus::Corpus,Error, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{AflMapFeedback, CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, OnDiskCorpus, CachedOnDiskCorpus, InMemoryCorpus, PowerQueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
+    corpus::Corpus,Error, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{AflMapFeedback, CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, QueueScheduler, OnDiskCorpus, CachedOnDiskCorpus, InMemoryCorpus, PowerQueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
 };
 use libafl_bolts::tuples::MatchNameRef;
 use libafl::feedbacks::stream::StreamFeedback;
 use libafl::inputs::multi::MultipartInput;
 use libafl::prelude::IfStage;
 use std::sync::{Arc, Mutex};
+use serde_json::Value;
 use std::{error, fs};
 use libafl_bolts::{
     current_nanos,
@@ -50,14 +51,17 @@ use libafl::stages::ShadowTracingStage;
 use libafl_bolts::tuples::Merge;
 use libafl::prelude::tokens_mutations;
 use libafl::mutators::I2SRandReplace;
+use libafl::prelude::CorpusId;
 use std::env;
 use crate::stream_input::*;
 use crate::qemu_args::*;
 use crate::common_hooks::*;
 use crate::exit_qemu::*;
 use crate::fuzzer_snapshot::*;
+use crate::smi_info::*;
 use crate::qemu_control::*;
 use crate::smm_fuzz_qemu_cmds::*;
+use crate::coverage::*;
 
 static mut SMM_INIT_FUZZ_EXIT_SNAPSHOT : *mut FuzzerSnapshot = ptr::null_mut();
 
@@ -111,11 +115,10 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
     }
 
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
-        
         debug!("new run");
         let mut inputs = StreamInputs::from_multiinput(input);
         unsafe {  
-            GLOB_INPUT = (&mut inputs) as *mut StreamInputs;
+            GLOB_INPUT = (&mut inputs) as *mut StreamInputs; 
         }
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
         set_fuzz_mem_switch(fuzz_input);
@@ -144,9 +147,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                             exit_code = ExitKind::Ok;
                         },
                         LIBAFL_QEMU_END_CRASH => {
-                            unsafe {
-                                exit_code = ExitKind::Ok;
-                            }
+                            exit_code = ExitKind::Ok;
                         },
                         _ => {
                             error!("exit 1");
@@ -211,13 +212,10 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         MaxMapFeedback::new(&edges_observer),
         TimeFeedback::new(&time_observer),
         StreamFeedback::new(&stream_observer),
+        SmiGlobalFoundTimeMetadataFeedback::new(),
     );
     
-    // A feedback to choose if an input is a solution or not
-    let mut objective = feedback_or!(
-        CrashFeedback::new(),
-        StreamFeedback::new(&stream_observer)
-    );
+    let mut objective = ();
 
     let mut state = StdState::new(
         StdRand::with_seed(current_nanos()),
@@ -261,32 +259,16 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
 
 
     let havoc_stage = StdMutationalStage::new(StdScheduledMutator::new(havoc_mutations().merge(tokens_mutations())));
-
-    let cb = |_fuzzer: &mut _,
-                  _executor: &mut _,
-                  state: &mut _,
-                  _event_manager: &mut _|
-         -> Result<bool, Error> {
-            let mut rng = rand::thread_rng();
-            let random_number: i32 = rng.gen_range(1..=3);
-            if random_number == 1 {
-                Ok(true)
-            } else {
-                Ok(false)
-            }
-        };
-
-    let op_havoc_stage = IfStage::new(cb, tuple_list!(havoc_stage));
-
     let mut shadow_executor = ShadowExecutor::new(executor, tuple_list!(cmplog_observer));
     let i2s = StdMutationalStage::new(StdScheduledMutator::new(tuple_list!(
         I2SRandReplace::new()
     )));
 
-    let mut stages = tuple_list!(ShadowTracingStage::new(&mut shadow_executor),i2s, op_havoc_stage);
+    let mut stages = tuple_list!(ShadowTracingStage::new(&mut shadow_executor),i2s, havoc_stage);
 
-    
+
     loop {
+        let num_corpus = state.corpus().last().unwrap().0;
         fuzzer
             .fuzz_one(&mut stages, &mut shadow_executor, &mut state, &mut mgr)
             .unwrap();
@@ -318,7 +300,6 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
             error!("fuzz one module over, run to next module error");
             exit_elegantly();
         }
-
     }
     unreachable!();
 
@@ -326,7 +307,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
 
 
 
-pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (), StdState<MultipartInput<BytesInput>, InMemoryCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, InMemoryCorpus<MultipartInput<BytesInput>>>>) -> SnapshotKind 
+pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (), StdState<MultipartInput<BytesInput>, InMemoryCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, InMemoryCorpus<MultipartInput<BytesInput>>>>) -> (SnapshotKind, Vec<(u64, usize)>) 
 {
     let qemu = emulator.qemu();
     let cpu = qemu.first_cpu().unwrap();
@@ -343,7 +324,7 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
             exit_elegantly();
         } else {
             snapshot.delete(qemu);
-            return try_snapshot;
+            return (try_snapshot, Vec::new());
         }
     }
     
@@ -430,24 +411,9 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
         }
         exit_code
     };
-    let mut edges_observer = unsafe {
-        HitcountsMapObserver::new(VariableMapObserver::from_mut_slice(
-            "edges",
-            OwnedMutSlice::from_raw_parts_mut(edges_map_mut_ptr(), EDGES_MAP_SIZE_IN_USE),
-            addr_of_mut!(MAX_EDGES_FOUND),  
-        ))
-        .track_indices()
-    };
-    let time_observer = TimeObserver::new("time");
-    let stream_observer = StreamObserver::new("stream", unsafe {Arc::clone(&STREAM_FEEDBACK)});
-    let mut feedback = feedback_or!(
-        MaxMapFeedback::new(&edges_observer),
-        TimeFeedback::new(&time_observer),
-        StreamFeedback::new(&stream_observer),
-    );
-    // A feedback to choose if an input is a solution or not
-    let mut objective = CrashFeedback::new();
 
+    let mut feedback = ();
+    let mut objective = ();
     let mut state = StdState::new(
         StdRand::with_seed(current_nanos()),
         InMemoryCorpus::<MultipartInput<BytesInput>>::new(),
@@ -461,14 +427,14 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
         info!("{s}")  
     );
     let mut mgr = SimpleEventManager::new(mon);
-    let scheduler = PowerQueueScheduler::new(&mut state, &mut edges_observer, PowerSchedule::FAST);
+    let scheduler = QueueScheduler::new();
     let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
 
 
     let mut executor = StatefulQemuExecutor::new(
         emulator,
         &mut harness,
-        tuple_list!(edges_observer, time_observer,stream_observer),
+        tuple_list!(),
         &mut fuzzer,
         &mut state,
         &mut mgr,
@@ -476,7 +442,40 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
     )
     .expect("Failed to create QemuExecutor");
 
-    state.load_initial_inputs_forced(&mut fuzzer, &mut executor, &mut mgr, &[corpus_dir.clone()]);
+
+    let mut ret = Vec::new();
+
+    let mut corpus_inputs = Vec::new();
+    if let Ok(entries) = fs::read_dir(corpus_dir.clone()) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let file_name = entry.file_name();
+                let file_name_str = file_name.to_string_lossy();
+                if !file_name_str.starts_with('.') {
+                    let metadata_filename = format!(".{file_name_str}.metadata");
+                    let metadata_fullpath = entry.path().parent().unwrap().join(metadata_filename);
+                    corpus_inputs.push((entry.path().to_str().unwrap().to_string() , metadata_fullpath.to_str().unwrap().to_string(), 0));
+                }
+            }
+        }
+    }
+
+    for input in corpus_inputs.iter_mut() {
+        let contents = fs::read_to_string(input.1.clone()).unwrap();
+        let config_json : Value = serde_json::from_str(&contents[..]).unwrap();
+        let found_time = config_json.get("found_time").unwrap().as_u64().unwrap();
+        input.2 = found_time;
+    }
+    corpus_inputs.sort_by( |a ,b| {
+        a.2.cmp(&b.2)
+    });
+    for input in corpus_inputs.iter() {
+        let input_testcase = MultipartInput::from_file(input.0.clone()).unwrap();
+        fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input_testcase);
+        ret.push((input.2, num_bbl_covered()));
+        info!("bbl {} {}",input.3, num_bbl_covered());
+    }
+
 
     if unsafe { !SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() } {
         let exit_snapshot = unsafe { Box::from_raw(SMM_INIT_FUZZ_EXIT_SNAPSHOT) };
@@ -488,12 +487,12 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
                         exit_snapshot.delete(qemu);
                         snapshot.delete(qemu);
                         set_current_module(arg1, arg2);
-                        return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
+                        return (SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu)), ret);
                     }
                     else if sync_exit_reason == LIBAFL_QEMU_END_SMM_MODULE_START {
                         exit_snapshot.delete(qemu);
                         snapshot.delete(qemu);
-                        return SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::from_qemu(qemu));
+                        return (SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::from_qemu(qemu)), ret);
                     }
                 }
             }
@@ -509,10 +508,10 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
                 if cmd == LIBAFL_QEMU_COMMAND_END {
                     if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_START {
                         set_current_module(arg1, arg2);
-                        return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
+                        return (SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu)), ret);
                     }
                     else if sync_exit_reason == LIBAFL_QEMU_END_SMM_MODULE_START {
-                        return SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::from_qemu(qemu));
+                        return (SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::from_qemu(qemu)), ret);
                     }
                 }
             }

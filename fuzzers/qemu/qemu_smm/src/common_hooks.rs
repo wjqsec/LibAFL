@@ -39,35 +39,11 @@ static mut COMMBUF_HOST_PTR : *mut u8 = 0 as *mut u8;
 static mut HOB_ADDR : u64 = 0;
 static mut HOB_SIZE : u64 = 0;
 
-static mut DEBUG_TRACE_ENABLE : bool = false;
 static mut DEBUG_TRACE_SWITCH : bool = false;
 
-
-pub fn enable_debug() {
-    unsafe {
-        DEBUG_TRACE_SWITCH = true;
-    }
-}
 pub fn enable_debug_trace() {
     unsafe {
-        if !IN_SMI_FUZZ_PHASE {
-            return;
-        }
-        if !DEBUG_TRACE_SWITCH {
-            return;
-        }
-        DEBUG_TRACE_ENABLE = true;
-    }
-}
-pub fn disable_debug_trace() {
-    unsafe {
-        if !IN_SMI_FUZZ_PHASE {
-            return;
-        }
-        if !DEBUG_TRACE_SWITCH {
-            return;
-        }
-        DEBUG_TRACE_ENABLE = false;
+        DEBUG_TRACE_SWITCH = true;
     }
 }
 
@@ -683,13 +659,11 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             unsafe {
                 IN_SMI = true;
             }
-            enable_debug_trace();
         },
         LIBAFL_QEMU_COMMAND_SMM_SMI_EXIT => {
             unsafe {
                 IN_SMI = false;
             }
-            disable_debug_trace();
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_VARIABLE_FUZZ_DATA => {
             let var_size = arg2;
@@ -825,7 +799,7 @@ pub fn bbl_common(cpu : CPU) {
 
 pub fn bbl_debug(cpu : CPU) {
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
-    if unsafe {DEBUG_TRACE_ENABLE == true}
+    if unsafe {DEBUG_TRACE_SWITCH == true && IN_SMI == true}
     {
         
         let rax : GuestReg = cpu.read_reg(Regs::Rax).unwrap();

@@ -102,7 +102,7 @@ enum SmmCommand {
         #[arg(long, value_parser = parse_duration)]
         fuzz_time: Option<Duration>,
     },
-    Run {
+    Replay {
         #[arg(short, long)]
         inputs: String,
 
@@ -178,13 +178,13 @@ fn main() {
             }
             fuzz((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), (&seed_path, &corpus_path, &crash_path), &snapshot_path, fuzz_time, &log_file, use_snapshot);
         },
-        SmmCommand::Run { inputs, debug_trace } => {
+        SmmCommand::Replay { inputs, debug_trace } => {
             if !ovmf_code_copy.exists() || !ovmf_var_copy.exists() {
                 error!("ovmf files not found");
                 exit_elegantly();
             }
             if debug_trace == true {
-                enable_debug();
+                enable_debug_trace();
             }
             let md = fs::metadata(inputs.clone().as_str()).unwrap();
             if md.is_dir() {
@@ -483,6 +483,7 @@ fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_
         error!("snapshot not found, unable to replay");
         exit_elegantly();
     }
+    let mut coverage = Vec::new();
     let args: Vec<String> = gen_ovmf_qemu_args(&ovmf_file_path.0, &ovmf_file_path.1, &log_file.to_str().unwrap().to_string());
     let env: Vec<(String, String)> = env::vars().collect();
     let qemu: Qemu = Qemu::init(args.as_slice(),env.as_slice()).unwrap();
@@ -553,7 +554,9 @@ fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_
             },
             SnapshotKind::StartOfSmmInitSnap(snap) => {
                 let corpus_dir = get_init_phase_corpus_dir(module_index, corpus_path);
-                snapshot = init_phase_run(corpus_dir, &mut emulator); 
+                let (ret_snapshot, ret_coverage) = init_phase_run(corpus_dir, &mut emulator); 
+                snapshot = ret_snapshot;
+                coverage.extend(ret_coverage);
                 snap.delete(qemu);
                 module_index += 1;
                 info!("passed one module");
@@ -599,7 +602,8 @@ fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_
 
     let run_mode = RunMode::RunCopus(get_smi_fuzz_phase_dirs(corpus_path));
     
-    let coverage = smm_phase_run(run_mode.clone(), &mut emulator);
+    let ret_coverage = smm_phase_run(run_mode.clone(), &mut emulator);
+    coverage.extend(ret_coverage);
     if let Some(coverage_log) = coverage_log {
         let mut file = File::create(&coverage_log).unwrap();
 
@@ -644,10 +648,7 @@ fn report(ovmf_file_path : (String, String), snapshot_bin : &PathBuf, log_file :
             }
         }
     }
-    if let SnapshotKind::None = snapshot {
-        error!("first breakpoint hit strange place");
-        exit_elegantly();
-    }
+
     FuzzerSnapshot::restore_from_file(qemu, snapshot_bin);
     let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),1000000000,false, false);
     exit_elegantly();

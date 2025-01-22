@@ -230,12 +230,14 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         MaxMapFeedback::new(&edges_observer),
         TimeFeedback::new(&time_observer),
         StreamFeedback::new(&stream_observer),
+        SmiGlobalFoundTimeMetadataFeedback::new(),
     );
     
     // A feedback to choose if an input is a solution or not
     let mut objective = feedback_or!(
         CrashFeedback::new(),
-        StreamFeedback::new(&stream_observer)
+        StreamFeedback::new(&stream_observer),
+        SmiGlobalFoundTimeMetadataFeedback::new(),
     );
 
     let mut state = StdState::new(
@@ -373,24 +375,25 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
         let in_cpu = in_qemu.first_cpu().unwrap();
         let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, SMI_FUZZ_TIMEOUT_BBL,false, true);
         let exit_code;
-        info!("new run exit {:?}",qemu_exit_reason);
         if let Ok(qemu_exit_reason) = qemu_exit_reason
         {
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
-                info!("qemu_run_to_end sync exit {:#x} {:#x} {:#x}",cmd,sync_exit_reason,pc);
                 if cmd == LIBAFL_QEMU_COMMAND_END {
                     match sync_exit_reason {
                         LIBAFL_QEMU_END_CRASH => {
                             unsafe {CRASH_TIMES += 1;}
                             exit_code = ExitKind::Crash;
+                            info!("exit crash pc: {:#x} sp: {:#x}",arg1, arg2);
                         },
                         LIBAFL_QEMU_END_SMM_FUZZ_END => {
                             unsafe {END_TIMES += 1;}
                             exit_code = ExitKind::Ok;
+                            info!("exit end");
                         },
                         | LIBAFL_QEMU_END_SMM_ASSERT => {
                             unsafe {ASSERT_TIMES += 1;}
                             exit_code = ExitKind::Ok;
+                            info!("exit assert");
                         },
                         _ => {
                             error!("exit error with sync exit arg {:#x}",sync_exit_reason);
@@ -408,13 +411,16 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
             else if let QemuExitReason::Timeout = qemu_exit_reason {
                 unsafe {TIMEOUT_TIMES += 1;}
                 exit_code = ExitKind::Timeout;
+                info!("exit timeout pc: {:#x}",pc);
             }
             else if let QemuExitReason::StreamNotFound = qemu_exit_reason {
                 exit_code = ExitKind::Ok;
+                info!("exit streamnotfound pc: {:#x}",pc);
             }
             else if let QemuExitReason::StreamOutof = qemu_exit_reason {
                 unsafe {STREAM_OVER_TIMES += 1;}
                 exit_code = ExitKind::Ok;
+                info!("exit streamover pc: {:#x}",pc);
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 error!("ctrl-C");
@@ -441,25 +447,9 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
             
         exit_code
     };
-    let mut edges_observer = unsafe {
-        HitcountsMapObserver::new(VariableMapObserver::from_mut_slice(
-            "edges",
-            OwnedMutSlice::from_raw_parts_mut(edges_map_mut_ptr(), EDGES_MAP_SIZE_IN_USE),
-            addr_of_mut!(MAX_EDGES_FOUND),  
-        ))
-        .track_indices()
-    };
-    let time_observer = TimeObserver::new("time");
-    let stream_observer = StreamObserver::new("stream", unsafe {Arc::clone(&STREAM_FEEDBACK)});
-    let mut feedback = feedback_or!(
-        MaxMapFeedback::new(&edges_observer),
-        TimeFeedback::new(&time_observer),
-        StreamFeedback::new(&stream_observer),
-    );
-    
-    // A feedback to choose if an input is a solution or not
-    let mut objective = feedback_or_fast!(CrashFeedback::new());
 
+    let mut feedback = ();
+    let mut objective = ();
     let mut state = StdState::new(
         StdRand::with_seed(current_nanos()),
         InMemoryCorpus::<MultipartInput<BytesInput>>::new(),
@@ -473,7 +463,7 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
         info!("{s} bbl:{:?} end:{:?} stream:{:?} crash:{:?} timeout:{:?} assert:{:?}",num_bbl_covered(), unsafe{END_TIMES}, unsafe{STREAM_OVER_TIMES}, unsafe{CRASH_TIMES}, unsafe{TIMEOUT_TIMES}, unsafe{ASSERT_TIMES})  
     );
     let mut mgr = SimpleEventManager::new(mon);
-    let scheduler = PowerQueueScheduler::new(&mut state, &mut edges_observer, PowerSchedule::FAST);
+    let scheduler = QueueScheduler::new();
     // let scheduler = QueueScheduler::new();
     let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
 
@@ -481,16 +471,13 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
     let mut executor = StatefulQemuExecutor::new(
         emulator,
         &mut harness,
-        tuple_list!(edges_observer, time_observer,stream_observer),
+        tuple_list!(),
         &mut fuzzer,
         &mut state,
         &mut mgr,
         Duration::from_secs(100000),
     )
     .expect("Failed to create QemuExecutor");
-    unsafe {
-        IN_SMI_FUZZ_PHASE = true;
-    }
 
     let mut ret = Vec::new();
     match input {
