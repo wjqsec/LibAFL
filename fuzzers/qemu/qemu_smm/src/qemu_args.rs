@@ -7,7 +7,7 @@ const OVMF_MODE : &str = "RELEASE";
 pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String, log : &String) -> Vec<String>
 {
     let project_dir = env!("CARGO_MANIFEST_DIR");
-    let mut qemu_firmware_dir = Path::new(project_dir).join("qemu_smm");
+    let mut qemu_firmware_dir = Path::new(project_dir).join("qemu_firmware");
     
     vec![
         "qemu-system-x86_64".to_string(),
