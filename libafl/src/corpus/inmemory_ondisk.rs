@@ -10,7 +10,7 @@ use std::{fs, fs::File, io::Write};
 use std::{
     fs::OpenOptions,
     io,
-    path::{Path, PathBuf},
+    path::{Path, PathBuf}, string::ToString,
 };
 
 #[cfg(feature = "gzip")]
@@ -427,7 +427,7 @@ where
             let ondisk_meta = OnDiskMetadata {
                 metadata: testcase.metadata_map(),
                 exec_time: testcase.exec_time(),
-                found_time: testcase.found_time(),
+                found_time: testcase.found_time().to_string(),
                 executions: testcase.executions(),
             };
 

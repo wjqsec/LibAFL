@@ -25,7 +25,8 @@ pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String, log
         "isa-debugcon.iobase=0x402".to_string(),
         "-L".to_string(),
         qemu_firmware_dir.to_string_lossy().to_string(),
-        "-nographic".to_string(),
+        "-serial".to_string(),
+        "null".to_string(),
     ]
 }
 pub fn get_snapshot_dev_filter_list() -> Vec<String>    

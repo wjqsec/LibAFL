@@ -271,6 +271,7 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
         NopEmulatorExitHandler,
         NopCommandManager)
         .unwrap();
+    setup_ctrlc_handler();
     let cpu = qemu.first_cpu().unwrap();
     
     

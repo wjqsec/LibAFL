@@ -81,7 +81,6 @@ static mut CRASH_TIMES : u64 = 0;
 static mut STREAM_OVER_TIMES : u64 = 0;
 static mut ASSERT_TIMES : u64 = 0;
 
-static mut END_FUZZ : bool = false;
 
 const SMI_FUZZ_TIMEOUT_BBL : u64 = 100000;
 
@@ -144,7 +143,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         }
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
-        let in_cpu = in_qemu.first_cpu().unwrap();
+        let in_cpu: CPU = in_qemu.first_cpu().unwrap();
         let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, SMI_FUZZ_TIMEOUT_BBL,false, true);
         let exit_code;
         debug!("new run exit {:?}",qemu_exit_reason);
@@ -193,10 +192,6 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
                 exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
-                unsafe {
-                    END_FUZZ = true;
-                }
-                error!("ctrl-C");
                 exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason {
@@ -339,14 +334,14 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
                 }
             }
         }
-        
         for i in num_corpus..( state.corpus().last().unwrap().0 + 1) {
             let input = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone().input().clone().unwrap();
             fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &input);
             let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),30000000, true, false);
         }
-        if unsafe {END_FUZZ} {
-            break;
+        if ctrlc_pressed() {
+            info!("Ctrl C");
+            exit_elegantly();
         }
         if let Some(fuzz_time) = fuzz_time {
             if (current_time().as_secs() - state.start_time().as_secs()) > fuzz_time.as_secs() {
@@ -359,7 +354,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
 } 
 
 
-pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (), StdState<MultipartInput<BytesInput>, InMemoryCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, InMemoryCorpus<MultipartInput<BytesInput>>>>) -> Vec<(u64, usize)>
+pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (), StdState<MultipartInput<BytesInput>, InMemoryCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, InMemoryCorpus<MultipartInput<BytesInput>>>>) -> Vec<(u128, usize)>
 {
     let qemu = emulator.qemu();
     let cpu: CPU = qemu.first_cpu().unwrap();
@@ -509,7 +504,7 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
             for input in corpus_inputs.iter_mut() {
                 let contents = fs::read_to_string(input.1.clone()).unwrap();
                 let config_json : Value = serde_json::from_str(&contents[..]).unwrap();
-                let found_time = config_json.get("found_time").unwrap().as_u64().unwrap();
+                let found_time = config_json.get("found_time").unwrap().as_str().unwrap().parse::<u128>().unwrap();
                 input.3 = found_time;
             }
             corpus_inputs.sort_by( |a ,b| {

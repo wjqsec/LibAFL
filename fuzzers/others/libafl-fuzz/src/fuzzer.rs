@@ -1,6 +1,7 @@
 use std::{borrow::Cow, marker::PhantomData, path::PathBuf, time::Duration};
 
 use libafl::{
+    Error,
     corpus::{CachedOnDiskCorpus, Corpus, OnDiskCorpus},
     events::{
         CentralizedEventManager, EventManagerHooksTuple, EventProcessor,

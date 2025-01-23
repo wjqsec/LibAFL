@@ -63,6 +63,7 @@ use crate::qemu_control::*;
 use crate::smm_fuzz_qemu_cmds::*;
 use crate::coverage::*;
 
+
 static mut SMM_INIT_FUZZ_EXIT_SNAPSHOT : *mut FuzzerSnapshot = ptr::null_mut();
 
 fn gen_init_random_seed(dir : &PathBuf) {
@@ -271,6 +272,10 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         fuzzer
             .fuzz_one(&mut stages, &mut shadow_executor, &mut state, &mut mgr)
             .unwrap();
+        if ctrlc_pressed() {
+            info!("Ctrl C");
+            exit_elegantly();
+        }
         if libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 60 * 10 {
             skip();
             let dummy_testcase = state.corpus().get(state.corpus().last().unwrap()).unwrap().clone().take().clone().input().clone().unwrap();
@@ -305,7 +310,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
 
 
 
-pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (), StdState<MultipartInput<BytesInput>, InMemoryCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, InMemoryCorpus<MultipartInput<BytesInput>>>>) -> (SnapshotKind, Vec<(u64, usize)>) 
+pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (), StdState<MultipartInput<BytesInput>, InMemoryCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, InMemoryCorpus<MultipartInput<BytesInput>>>>) -> (SnapshotKind, Vec<(u128, usize)>) 
 {
     let qemu = emulator.qemu();
     let cpu = qemu.first_cpu().unwrap();
@@ -461,7 +466,7 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
     for input in corpus_inputs.iter_mut() {
         let contents = fs::read_to_string(input.1.clone()).unwrap();
         let config_json : Value = serde_json::from_str(&contents[..]).unwrap();
-        let found_time = config_json.get("found_time").unwrap().as_u64().unwrap();
+        let found_time = config_json.get("found_time").unwrap().as_str().unwrap().parse::<u128>().unwrap();
         input.2 = found_time;
     }
     corpus_inputs.sort_by( |a ,b| {

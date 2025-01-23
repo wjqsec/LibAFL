@@ -17471,6 +17471,9 @@ extern "C" {
     pub fn libafl_qemu_exit_stream_outof(cpu: *mut CPUState);
 }
 extern "C" {
+    pub fn libafl_qemu_cpu_stopped(cpu: *mut CPUState) -> bool;
+}
+extern "C" {
     pub fn libafl_gen_edge(
         cpu: *mut CPUState,
         src_block: target_ulong,

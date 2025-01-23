@@ -48,7 +48,7 @@ static SMI_GROUPS: Lazy<Mutex<SmiGroupInfo>> = Lazy::new(|| {
 
 
 static FUZZER_START_TIME: Lazy<u128> = Lazy::new(|| {
-    current_time().as_micros()
+    current_time().as_micros() -  10 * 1000000
 });
 
 pub fn add_smi_group_info(group: u8, smi_index: u8) {
