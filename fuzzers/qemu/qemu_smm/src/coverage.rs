@@ -23,16 +23,16 @@ static mut BBL_COV: Lazy<HashMap<Uuid, ModuleCoverage>> = Lazy::new(|| {
 pub fn parse_cov_module_file(filename : &PathBuf) {
     if let Ok(file) = File::open(filename) {
         for line in io::BufReader::new(file).lines() {
-            if let Ok(range_str) = line {
-                let line_trimed = range_str.trim();
-                let guid = Uuid::from_str(line_trimed).unwrap();
-                unsafe  {
-                    BBL_COV.insert(guid, ModuleCoverage {
-                        start_addr : 0,
-                        end_addr : 0,
-                        offset : HashSet::new(),
-                    });
-                }
+            if let Ok(guid_lien) = line {
+                if let Ok(guid) = Uuid::from_str(guid_lien.trim()) {
+                    unsafe  {
+                        BBL_COV.insert(guid, ModuleCoverage {
+                            start_addr : 0,
+                            end_addr : 0,
+                            offset : HashSet::new(),
+                        });
+                    }
+                } 
             }
         }
     }
