@@ -1,3 +1,4 @@
+use libafl_bolts::AsSliceMut;
 use libafl_qemu::{GuestAddr, GuestReg, CPU,Regs,Qemu};
 
 use log::*;
@@ -703,7 +704,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             unsafe {
                 cpu.read_mem(addr,&mut guid_buf);
             }
-            let module_guid = Uuid::from_bytes(guid_buf);
+            let module_guid = Uuid::from_bytes_le(guid_buf);
             module_range(&module_guid, start_addr, end_addr);
             info!("[Module] {} {:#x}-{:#x}", module_guid.to_string(), start_addr, end_addr);
         },
@@ -714,7 +715,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             unsafe {
                 cpu.read_mem(addr,&mut guid_buf);
             }
-            let smi_guid = Uuid::from_bytes(guid_buf);
+            let smi_guid = Uuid::from_bytes_le(guid_buf);
             info!("[SMI] {} {}",index, smi_guid.to_string());
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_SMM_FUZZ_GROUP => {
@@ -728,7 +729,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             unsafe {
                 cpu.read_mem(addr,&mut guid_buf);
             }
-            let module_guid = Uuid::from_bytes(guid_buf);
+            let module_guid = Uuid::from_bytes_le(guid_buf);
             info!("[SKIP] {}",module_guid.to_string());
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_UNLOAD_MODULE_INFO => {
@@ -737,8 +738,19 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             unsafe {
                 cpu.read_mem(addr,&mut guid_buf);
             }
-            let module_guid = Uuid::from_bytes(guid_buf);
+            let module_guid = Uuid::from_bytes_le(guid_buf);
             info!("[UNLOAD] {}",module_guid.to_string());
+        },
+        LIBAFL_QEMU_COMMAND_SMM_HELP_COPY => {
+            let dst = arg1;
+            let src = arg2;
+            let size = arg3;
+            info!("copy {:#x} {:#x} {:#x}",dst,src,size);
+            unsafe {
+                let mut buf : Vec<u8> = vec![0; size as usize];
+                cpu.read_mem(src, buf.as_slice_mut());
+                cpu.write_mem(dst, buf.as_slice());
+            }
         },
         _ => { 
             error!("backdoor wrong cmd {:}",cmd); 
