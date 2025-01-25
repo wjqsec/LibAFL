@@ -7,7 +7,6 @@ mod init_fuzz_phase;
 mod smm_fuzz_phase;
 mod stream_input;
 mod common_hooks;
-mod cmd;
 mod smi_info;
 mod coverage;
 mod qemu_control;
@@ -59,7 +58,6 @@ use libafl_qemu::FastSnapshotPtr;
 use crate::stream_input::*;
 use crate::qemu_args::*;
 use crate::common_hooks::*;
-use crate::cmd::*;
 use crate::smi_info::*;
 use crate::coverage::*;
 use crate::exit_qemu::*;
@@ -186,14 +184,7 @@ fn main() {
             if debug_trace == true {
                 enable_debug_trace();
             }
-            let md = fs::metadata(inputs.clone().as_str()).unwrap();
-            if md.is_dir() {
-                let run_mode = RunMode::RunCopus(PathBuf::from_str(inputs.clone().as_str()).unwrap());
-                run((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), &corpus_path,run_mode, &snapshot_path, &log_file);
-            } else if md.is_file() {
-                let run_mode = RunMode::RunTestcase(PathBuf::from_str(inputs.clone().as_str()).unwrap());
-                run((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), &corpus_path,run_mode, &snapshot_path, &log_file);
-            }
+            run((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), &corpus_path,PathBuf::from_str(inputs.clone().as_str()).unwrap(), &snapshot_path, &log_file);
         },
         SmmCommand::Coverage { cov_module, output } => {
             if let Some(cov_module) = cov_module {
@@ -410,7 +401,7 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
     exit_elegantly();
 }
 
-fn run(ovmf_file_path : (String, String), corpus_path : &PathBuf, run_mode : RunMode, snapshot_bin : &PathBuf, log_file : &PathBuf) {
+fn run(ovmf_file_path : (String, String), corpus_path : &PathBuf, run_corpus : PathBuf, snapshot_bin : &PathBuf, log_file : &PathBuf) {
 
     if !snapshot_bin.exists() {
         error!("snapshot not found, unable to replay");
@@ -444,10 +435,7 @@ fn run(ovmf_file_path : (String, String), corpus_path : &PathBuf, run_mode : Run
             }
         }
     }
-    if let SnapshotKind::None = snapshot {
-        error!("first breakpoint hit strange place");
-        exit_elegantly();
-    }
+    info!("restore snapshot");
     
     FuzzerSnapshot::restore_from_file(qemu, snapshot_bin);
     let mut block_id = emulator.modules_mut().blocks(
@@ -473,7 +461,7 @@ fn run(ovmf_file_path : (String, String), corpus_path : &PathBuf, run_mode : Run
     })));
 
     
-    smm_phase_run(run_mode.clone(), &mut emulator);
+    smm_phase_run(run_corpus, &mut emulator);
     exit_elegantly();
     
 }
@@ -597,11 +585,8 @@ fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
         rdmsr_smm_fuzz_phase(in_ecx, out_eax, out_edx, fuzz_input);
     })));
-
-
-    let run_mode = RunMode::RunCopus(get_smi_fuzz_phase_dirs(corpus_path));
     
-    let ret_coverage = smm_phase_run(run_mode.clone(), &mut emulator);
+    let ret_coverage = smm_phase_run(get_smi_fuzz_phase_dirs(corpus_path), &mut emulator);
     coverage.extend(ret_coverage);
     if let Some(coverage_log) = coverage_log {
         let mut file = File::create(&coverage_log).unwrap();
@@ -651,8 +636,6 @@ fn report(ovmf_file_path : (String, String), snapshot_bin : &PathBuf, log_file :
     FuzzerSnapshot::restore_from_file(qemu, snapshot_bin);
     let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),1000000000,false, false);
     exit_elegantly();
-
-    let run_mode = RunMode::None;
     
-    let _ = smm_phase_run(run_mode.clone(), &mut emulator);
+    let _ = smm_phase_run(PathBuf::new(), &mut emulator);
 }

@@ -745,7 +745,6 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             let dst = arg1;
             let src = arg2;
             let size = arg3;
-            info!("copy {:#x} {:#x} {:#x}",dst,src,size);
             unsafe {
                 let mut buf : Vec<u8> = vec![0; size as usize];
                 cpu.read_mem(src, buf.as_slice_mut());

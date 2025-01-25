@@ -72,7 +72,6 @@ use crate::coverage::*;
 use crate::fuzzer_snapshot::*;
 use crate::qemu_control::*;
 use crate::smi_info::*;
-use crate::cmd::*;
 use crate::smm_fuzz_qemu_cmds::*;
 
 static mut TIMEOUT_TIMES : u64 = 0;
@@ -353,8 +352,16 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
 
 } 
 
+fn print_exit_addr_info(reason : &str, addr : u64, sp : u64) {
+    let (module, offset) = find_module_by_addr(addr);
+    if let Some(module) = module {
+        info!("exit {} pc: {}:{:#x} sp: {:#x}",reason, module.to_string(), offset, sp);
+    } else {
+        info!("exit {} pc: {:#x} sp: {:#x}",reason, offset, sp);
+    }
+}
 
-pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (), StdState<MultipartInput<BytesInput>, InMemoryCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, InMemoryCorpus<MultipartInput<BytesInput>>>>) -> Vec<(u128, usize)>
+pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (), StdState<MultipartInput<BytesInput>, InMemoryCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, InMemoryCorpus<MultipartInput<BytesInput>>>>) -> Vec<(u128, usize)>
 {
     let qemu = emulator.qemu();
     let cpu: CPU = qemu.first_cpu().unwrap();
@@ -384,7 +391,7 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
                         LIBAFL_QEMU_END_CRASH => {
                             unsafe {CRASH_TIMES += 1;}
                             exit_code = ExitKind::Crash;
-                            info!("exit crash pc: {:#x} sp: {:#x}",arg1, arg2);
+                            print_exit_addr_info("crash", arg1, arg2);
                         },
                         LIBAFL_QEMU_END_SMM_FUZZ_END => {
                             unsafe {END_TIMES += 1;}
@@ -412,16 +419,16 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
             else if let QemuExitReason::Timeout = qemu_exit_reason {
                 unsafe {TIMEOUT_TIMES += 1;}
                 exit_code = ExitKind::Timeout;
-                info!("exit timeout pc: {:#x}",pc);
+                print_exit_addr_info("timeout", pc, 0);
             }
             else if let QemuExitReason::StreamNotFound = qemu_exit_reason {
                 exit_code = ExitKind::Ok;
-                info!("exit streamnotfound pc: {:#x}",pc);
+                print_exit_addr_info("stream not found", pc, 0);
             }
             else if let QemuExitReason::StreamOutof = qemu_exit_reason {
                 unsafe {STREAM_OVER_TIMES += 1;}
                 exit_code = ExitKind::Ok;
-                info!("exit streamover pc: {:#x}",pc);
+                print_exit_addr_info("stream outof", pc, 0);
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 error!("ctrl-C");
@@ -481,10 +488,9 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
     .expect("Failed to create QemuExecutor");
 
     let mut ret = Vec::new();
-    match input {
-        RunMode::RunCopus(corpus) => {
-            let mut corpus_inputs = Vec::new();
-            if let Ok(entries) = fs::read_dir(corpus.clone()) {
+    if input_corpus.is_dir() {
+        let mut corpus_inputs = Vec::new();
+            if let Ok(entries) = fs::read_dir(input_corpus.clone()) {
                 for entry in entries {
                     if let Ok(entry) = entry {
                         let file_name = entry.file_name();
@@ -517,14 +523,10 @@ pub fn smm_phase_run(input : RunMode, emulator: &mut Emulator<NopCommandManager,
                 info!("bbl {} {}",input.3, num_bbl_covered());
                 ret.push((input.3, num_bbl_covered()));
             }
-        },
-        RunMode::RunTestcase(testcase) => {
-            let input = MultipartInput::from_file(testcase.clone()).unwrap();
-            fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input);
-        },
-        _ => {
-            
-        }
-    }
+    } else if input_corpus.is_file() {
+        let input = MultipartInput::from_file(input_corpus.clone()).unwrap();
+        fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input);
+    }     
+
     return ret;
 }
