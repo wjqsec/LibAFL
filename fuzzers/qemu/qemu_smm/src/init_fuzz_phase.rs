@@ -268,7 +268,6 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
 
 
     loop {
-        let num_corpus = state.corpus().last().unwrap().0;
         fuzzer
             .fuzz_one(&mut stages, &mut shadow_executor, &mut state, &mut mgr)
             .unwrap();
