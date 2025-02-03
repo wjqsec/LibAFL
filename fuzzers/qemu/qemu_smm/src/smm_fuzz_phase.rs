@@ -339,7 +339,6 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
             let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),30000000, true, false);
         }
         if ctrlc_pressed() {
-            info!("Ctrl C");
             exit_elegantly();
         }
         if let Some(fuzz_time) = fuzz_time {

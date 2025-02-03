@@ -272,10 +272,9 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
             .fuzz_one(&mut stages, &mut shadow_executor, &mut state, &mut mgr)
             .unwrap();
         if ctrlc_pressed() {
-            info!("Ctrl C");
             exit_elegantly();
         }
-        if libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 60 * 10 {
+        if libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 60 * 1 {
             skip();
             let dummy_testcase = state.corpus().get(state.corpus().last().unwrap()).unwrap().clone().take().clone().input().clone().unwrap();
             fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &dummy_testcase);

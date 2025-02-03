@@ -34,6 +34,7 @@ pub fn exit_elegantly()
 pub fn setup_ctrlc_handler() {
     ctrlc::set_handler(move || {
         unsafe {
+            info!("Ctrl C");
             CTRLC_PRESSED = true;
         }
     }).expect("setup_ctrlc_handler error");
