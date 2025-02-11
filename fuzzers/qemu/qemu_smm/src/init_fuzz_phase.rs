@@ -125,7 +125,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         snapshot.delete(qemu);
         return try_snapshot;
     }
-    qemu.flush_tb();
+    emulator.modules_mut().first_exec_all();
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         debug!("new run");
         let mut inputs = StreamInputs::from_multiinput(input);
@@ -351,7 +351,7 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
         }
     }
     
-    qemu.flush_tb();
+    emulator.modules_mut().first_exec_all();
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         
         debug!("new run");

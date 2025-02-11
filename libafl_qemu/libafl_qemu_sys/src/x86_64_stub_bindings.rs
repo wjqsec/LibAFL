@@ -17950,6 +17950,12 @@ extern "C" {
     pub fn libafl_qemu_flush_tb();
 }
 extern "C" {
+    pub fn libafl_qemu_get_infuzz() -> bool;
+}
+extern "C" {
+    pub fn libafl_qemu_set_infuzz(infuzz: bool);
+}
+extern "C" {
     pub fn libafl_jit_trace_edge_hitcount(data: u64, id: u64) -> usize;
 }
 extern "C" {

@@ -24,7 +24,7 @@ use libafl_qemu_sys::{
     libafl_flush_jit, libafl_get_exit_reason, libafl_page_from_addr, libafl_qemu_add_gdb_cmd,
     libafl_qemu_cpu_index, libafl_qemu_current_cpu, libafl_qemu_gdb_reply, libafl_qemu_get_cpu,
     libafl_qemu_num_cpus, libafl_qemu_num_regs, libafl_qemu_read_reg,libafl_get_first_cpu,libafl_paddr2host,
-    libafl_qemu_remove_breakpoint, libafl_qemu_set_breakpoint,libafl_qemu_flush_tb,
+    libafl_qemu_remove_breakpoint, libafl_qemu_set_breakpoint,libafl_qemu_flush_tb,libafl_qemu_get_infuzz,libafl_qemu_set_infuzz,
     libafl_qemu_exit_timeout,libafl_qemu_exit_stream_notfound,libafl_qemu_exit_stream_outof,libafl_qemu_in_smm_mode,libafl_qemu_cpu_stopped,
     libafl_qemu_write_reg, CPUArchState, CPUStatePtr, FatPtr, GuestAddr, GuestPhysAddr, GuestUsize,
     GuestVirtAddr,
@@ -148,7 +148,6 @@ impl Default for QemuSnapshotCheckResult {
 #[derive(Clone, Copy, Debug)]
 pub struct Qemu {
     _private: (),
-    in_fuzz : bool,
 }
 
 #[derive(Debug, Clone)]
@@ -595,13 +594,17 @@ impl Qemu {
             }
         }
 
-        Ok(Qemu { _private: (), in_fuzz : false })
+        Ok(Qemu { _private: ()})
     }
     pub fn get_infuzz(&self) -> bool {
-        self.in_fuzz
+        unsafe {
+            libafl_qemu_get_infuzz()
+        }
     }
     pub fn set_infuzz(&mut self, infuzz : bool) {
-        self.in_fuzz = infuzz;
+        unsafe {
+            libafl_qemu_set_infuzz(infuzz);
+        }
     }
     pub fn flush_tb(&self) {
         unsafe { libafl_qemu_flush_tb(); }
@@ -621,14 +624,14 @@ impl Qemu {
     /// Prefer `Qemu::get` for a safe version of this method.
     #[must_use]
     pub unsafe fn get_unchecked() -> Self {
-        Qemu { _private: (), in_fuzz : false }
+        Qemu { _private: ()}
     }
 
     #[must_use]
     pub fn get() -> Option<Self> {
         unsafe {
             if QEMU_IS_INITIALIZED {
-                Some(Qemu { _private: (), in_fuzz : false })
+                Some(Qemu { _private: ()})
             } else {
                 None
             }

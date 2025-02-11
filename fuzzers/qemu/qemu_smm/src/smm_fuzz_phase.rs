@@ -133,7 +133,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         error!("run to fuzz point error");
         exit_elegantly();
     }
-    
+    emulator.modules_mut().first_exec_all();
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         let mut inputs = StreamInputs::from_multiinput(input);
         unsafe {  
@@ -308,7 +308,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
             num_solutions = Some(state.solutions().last().unwrap().0);
         }
         fuzzer.fuzz_one(&mut stages, &mut shadow_executor, &mut state, &mut mgr).unwrap();
-        mgr.maybe_report_progress(&mut state, Duration::from_secs(60));
+        mgr.maybe_report_progress(&mut state, Duration::from_secs(30));
         for i in num_corpus..(state.corpus().last().unwrap().0 + 1) {
             let testcase = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone();
             let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
@@ -371,6 +371,7 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
         error!("run to fuzz point error");
         exit_elegantly();
     }
+    emulator.modules_mut().first_exec_all();
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         let mut inputs = StreamInputs::from_multiinput(input);
         unsafe {  

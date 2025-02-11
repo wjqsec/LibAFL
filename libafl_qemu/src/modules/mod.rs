@@ -59,7 +59,11 @@ where
         ET: EmulatorModuleTuple<S>,
     {
     }
-
+    fn reinit_module<ET>(&self, _emulator_modules: &mut EmulatorModules<ET, S>)
+    where
+        ET: EmulatorModuleTuple<S>,
+    {
+    }
     fn post_exec<OT, ET>(
         &mut self,
         _emulator_modules: &mut EmulatorModules<ET, S>,

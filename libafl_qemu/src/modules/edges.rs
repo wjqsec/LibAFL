@@ -167,6 +167,9 @@ where
     fn first_exec<ET>(&mut self, emulator_modules: &mut EmulatorModules<ET, S>)
         where
             ET: EmulatorModuleTuple<S>, {
+        if let Some(hook_id) = self.hook_id {
+            hook_id.remove(true);
+        }
         if self.use_hitcounts {
             let hook_id = emulator_modules.edges(
                 Hook::Function(gen_unique_edge_ids::<ET, S>),
@@ -581,7 +584,7 @@ where
     ET: EmulatorModuleTuple<S>,
     S: Unpin + UsesInput + HasMetadata,
 {
-    if emulator_modules.qemu().get_infuzz() {
+    if !emulator_modules.qemu().get_infuzz() {
         return None;
     }   
     if let Some(h) = emulator_modules.get::<EdgeCoverageModule>() {
@@ -634,7 +637,7 @@ fn trace_edge_hitcount<ET, S>(emulator_modules: &mut EmulatorModules<ET, S>, sta
 where
     ET: EmulatorModuleTuple<S>,
     S: Unpin + UsesInput + HasMetadata, {
-    if emulator_modules.qemu().get_infuzz() {
+    if !emulator_modules.qemu().get_infuzz() {
         return;
     }
     unsafe {
@@ -646,7 +649,7 @@ fn trace_edge_single<ET, S>(emulator_modules: &mut EmulatorModules<ET, S>, state
 where
     ET: EmulatorModuleTuple<S>,
     S: Unpin + UsesInput + HasMetadata, {
-    if emulator_modules.qemu().get_infuzz() {
+    if !emulator_modules.qemu().get_infuzz() {
         return;
     }
     unsafe {

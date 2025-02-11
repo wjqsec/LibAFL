@@ -88,6 +88,9 @@ where
     fn first_exec<ET>(&mut self, emulator_modules: &mut EmulatorModules<ET, S>)
         where
             ET: EmulatorModuleTuple<S>, {
+        if let Some(hook_id) = self.hook_id {
+            hook_id.remove(true);
+        }
         self.hook_id = Some(emulator_modules.cmps(
             Hook::Function(gen_unique_cmp_ids::<ET, S>),
             Hook::Function(trace_cmp1_cmplog::<ET, S>),
@@ -167,7 +170,7 @@ where
     ET: EmulatorModuleTuple<S>,
     S: Unpin + UsesInput + HasMetadata,
 {
-    if emulator_modules.qemu().get_infuzz() {
+    if !emulator_modules.qemu().get_infuzz() {
         return None;
     }
     if let Some(h) = emulator_modules.get::<CmpLogModule>() {
@@ -213,7 +216,7 @@ fn trace_cmp1_cmplog<ET, S>(emulator_modules: &mut EmulatorModules<ET, S>, state
 where
     ET: EmulatorModuleTuple<S>,
     S: Unpin + UsesInput + HasMetadata, {
-    if emulator_modules.qemu().get_infuzz() {
+    if !emulator_modules.qemu().get_infuzz() {
         return;
     }
     if v0 == v1 {
@@ -228,7 +231,7 @@ fn trace_cmp2_cmplog<ET, S>(emulator_modules: &mut EmulatorModules<ET, S>, state
 where
     ET: EmulatorModuleTuple<S>,
     S: Unpin + UsesInput + HasMetadata,{
-    if emulator_modules.qemu().get_infuzz() {
+    if !emulator_modules.qemu().get_infuzz() {
         return;
     }
     if v0 == v1 {
@@ -243,7 +246,7 @@ fn trace_cmp4_cmplog<ET, S>(emulator_modules: &mut EmulatorModules<ET, S>, state
 where
     ET: EmulatorModuleTuple<S>,
     S: Unpin + UsesInput + HasMetadata,{
-    if emulator_modules.qemu().get_infuzz() {
+    if !emulator_modules.qemu().get_infuzz() {
         return;
     }
     if v0 == v1 {
@@ -258,7 +261,7 @@ fn trace_cmp8_cmplog<ET, S>(emulator_modules: &mut EmulatorModules<ET, S>, state
 where
     ET: EmulatorModuleTuple<S>,
     S: Unpin + UsesInput + HasMetadata,{
-    if emulator_modules.qemu().get_infuzz() {
+    if !emulator_modules.qemu().get_infuzz() {
         return;
     }
     if v0 == v1 {
