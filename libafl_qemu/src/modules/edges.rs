@@ -164,14 +164,13 @@ impl<S> EmulatorModule<S> for EdgeCoverageModule
 where
     S: Unpin + UsesInput + HasMetadata,
 {
-    fn pre_exec<ET>(&mut self, emulator_modules: &mut EmulatorModules<ET, S>, _input: &<S as UsesInput>::Input)
+    fn first_exec<ET>(&mut self, emulator_modules: &mut EmulatorModules<ET, S>)
         where
-            ET: EmulatorModuleTuple<S>, 
-    {
+            ET: EmulatorModuleTuple<S>, {
         if self.use_hitcounts {
             let hook_id = emulator_modules.edges(
                 Hook::Function(gen_unique_edge_ids::<ET, S>),
-                Hook::Raw(trace_edge_hitcount),
+                Hook::Function(trace_edge_hitcount::<ET, S>),
             );
             // let hook_id =
             //     emulator_modules.edges(Hook::Function(gen_unique_edge_ids::<ET, S>), Hook::Empty);
@@ -185,7 +184,7 @@ where
         } else {
             let hook_id = emulator_modules.edges(
                 Hook::Function(gen_unique_edge_ids::<ET, S>),
-                Hook::Raw(trace_edge_single),
+                Hook::Function(trace_edge_single::<ET, S>),
             );
             // let hook_id =
             //     emulator_modules.edges(Hook::Function(gen_unique_edge_ids::<ET, S>), Hook::Empty);
@@ -198,6 +197,11 @@ where
             self.hook_id = Some(hook_id);
         }
     }
+    fn pre_exec<ET>(&mut self, emulator_modules: &mut EmulatorModules<ET, S>, _input: &<S as UsesInput>::Input)
+        where
+            ET: EmulatorModuleTuple<S>, 
+    {
+    }
 
     fn post_exec<OT, ET>(
             &mut self,
@@ -209,7 +213,7 @@ where
             OT: libafl::prelude::ObserversTuple<S>,
             ET: EmulatorModuleTuple<S>, 
     {
-        self.hook_id.unwrap().remove(false);
+        // self.hook_id.unwrap().remove(false);
     }
     // fn first_exec<ET>(&mut self, emulator_modules: &mut EmulatorModules<ET, S>)
     // where
@@ -577,6 +581,9 @@ where
     ET: EmulatorModuleTuple<S>,
     S: Unpin + UsesInput + HasMetadata,
 {
+    if emulator_modules.qemu().get_infuzz() {
+        return None;
+    }   
     if let Some(h) = emulator_modules.get::<EdgeCoverageModule>() {
         #[cfg(emulation_mode = "usermode")]
         {
@@ -623,13 +630,25 @@ where
     }
 }
 
-pub extern "C" fn trace_edge_hitcount(_: *const (), id: u64) {
+fn trace_edge_hitcount<ET, S>(emulator_modules: &mut EmulatorModules<ET, S>, state: Option<&mut S>, id: u64) 
+where
+    ET: EmulatorModuleTuple<S>,
+    S: Unpin + UsesInput + HasMetadata, {
+    if emulator_modules.qemu().get_infuzz() {
+        return;
+    }
     unsafe {
         EDGES_MAP[id as usize] = EDGES_MAP[id as usize].wrapping_add(1);
     }
 }
 
-pub extern "C" fn trace_edge_single(_: *const (), id: u64) {
+fn trace_edge_single<ET, S>(emulator_modules: &mut EmulatorModules<ET, S>, state: Option<&mut S>, id: u64)
+where
+    ET: EmulatorModuleTuple<S>,
+    S: Unpin + UsesInput + HasMetadata, {
+    if emulator_modules.qemu().get_infuzz() {
+        return;
+    }
     unsafe {
         EDGES_MAP[id as usize] = 1;
     }

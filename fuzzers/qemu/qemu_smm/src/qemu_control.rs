@@ -28,7 +28,7 @@ fn post_fuzz_input_process() {
     }
 }
 
-pub fn qemu_run_once(qemu : Qemu, snapshot : & FuzzerSnapshot, timeout : u64, restore_whole_fuzz_snapshot : bool, fuzz : bool) -> (Result<QemuExitReason, libafl_qemu::QemuExitError>, GuestReg, GuestReg, GuestReg, GuestReg, GuestReg) {
+pub fn qemu_run_once(mut qemu : Qemu, snapshot : & FuzzerSnapshot, timeout : u64, restore_whole_fuzz_snapshot : bool, fuzz : bool) -> (Result<QemuExitReason, libafl_qemu::QemuExitError>, GuestReg, GuestReg, GuestReg, GuestReg, GuestReg) {
     unsafe {
         let cpu = qemu.first_cpu().unwrap();
         set_exec_count(0);
@@ -37,6 +37,7 @@ pub fn qemu_run_once(qemu : Qemu, snapshot : & FuzzerSnapshot, timeout : u64, re
             snapshot.restore_fuzz_snapshot(qemu, restore_whole_fuzz_snapshot);
         }
         IN_FUZZ = fuzz;
+        qemu.set_infuzz(fuzz);
         let qemu_exit_reason = qemu.run();
         IN_FUZZ = false;
         post_fuzz_input_process();

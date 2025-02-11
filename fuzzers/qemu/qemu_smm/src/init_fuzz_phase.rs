@@ -10,6 +10,7 @@ use rand::Rng;
 use libafl::{
     corpus::Corpus,Error, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{AflMapFeedback, CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, QueueScheduler, OnDiskCorpus, CachedOnDiskCorpus, InMemoryCorpus, PowerQueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
 };
+use libafl::events::ProgressReporter;
 use libafl_bolts::tuples::MatchNameRef;
 use libafl::feedbacks::stream::StreamFeedback;
 use libafl::inputs::multi::MultipartInput;
@@ -66,6 +67,12 @@ use crate::coverage::*;
 
 static mut SMM_INIT_FUZZ_EXIT_SNAPSHOT : *mut FuzzerSnapshot = ptr::null_mut();
 
+static mut TIMEOUT_TIMES : u64 = 0;
+static mut END_TIMES : u64 = 0;
+static mut CRASH_TIMES : u64 = 0;
+static mut STREAM_OVER_TIMES : u64 = 0;
+static mut ASSERT_TIMES : u64 = 0;
+
 fn gen_init_random_seed(dir : &PathBuf) {
     let mut initial_input = MultipartInput::<BytesInput>::new();
     initial_input.add_part(0 as u128, BytesInput::new(vec![]),0x10,0);
@@ -101,6 +108,11 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
     let snapshot = FuzzerSnapshot::from_qemu(qemu);
     unsafe {
         SMM_INIT_FUZZ_EXIT_SNAPSHOT = ptr::null_mut();
+        TIMEOUT_TIMES = 0;
+        END_TIMES = 0;
+        CRASH_TIMES = 0;
+        STREAM_OVER_TIMES = 0;
+        ASSERT_TIMES = 0;
     }
     unskip();
 
@@ -113,7 +125,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         snapshot.delete(qemu);
         return try_snapshot;
     }
-
+    qemu.flush_tb();
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         debug!("new run");
         let mut inputs = StreamInputs::from_multiinput(input);
@@ -136,6 +148,9 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                     match sync_exit_reason {
                         LIBAFL_QEMU_END_SMM_INIT_UNSUPPORT | LIBAFL_QEMU_END_SMM_ASSERT => {
                             exit_code = ExitKind::Ok; // init phase does not have crash we assume
+                            unsafe {
+                                END_TIMES += 1;
+                            }
                         },
                         LIBAFL_QEMU_END_SMM_INIT_END => {
                             unsafe {
@@ -148,6 +163,9 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                         },
                         LIBAFL_QEMU_END_CRASH => {
                             exit_code = ExitKind::Ok;
+                            unsafe {
+                                CRASH_TIMES += 1;
+                            }
                         },
                         _ => {
                             error!("exit 1");
@@ -163,6 +181,9 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                 }
             }
             else if let QemuExitReason::Timeout = qemu_exit_reason {
+                unsafe {
+                    TIMEOUT_TIMES += 1;
+                }
                 exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::StreamNotFound = qemu_exit_reason {
@@ -227,7 +248,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
     ).unwrap();
 
     let mon = SimpleMonitor::new(|s| 
-        info!("{s}")  
+        info!("{s} crash:{} timeout:{} unsupport:{}",unsafe{CRASH_TIMES}, unsafe {TIMEOUT_TIMES}, unsafe {END_TIMES})  
     );
     let mut mgr = SimpleEventManager::new(mon);
     let scheduler = PowerQueueScheduler::new(&mut state, &mut edges_observer, PowerSchedule::FAST);
@@ -271,6 +292,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         fuzzer
             .fuzz_one(&mut stages, &mut shadow_executor, &mut state, &mut mgr)
             .unwrap();
+        mgr.maybe_report_progress(&mut state, Duration::from_secs(60));
         if ctrlc_pressed() {
             exit_elegantly();
         }
@@ -329,7 +351,7 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
         }
     }
     
-
+    qemu.flush_tb();
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         
         debug!("new run");

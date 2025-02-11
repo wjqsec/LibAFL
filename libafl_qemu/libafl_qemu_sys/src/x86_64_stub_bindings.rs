@@ -17947,6 +17947,9 @@ extern "C" {
     pub fn libafl_page_offset_from_addr(addr: target_ulong) -> target_ulong;
 }
 extern "C" {
+    pub fn libafl_qemu_flush_tb();
+}
+extern "C" {
     pub fn libafl_jit_trace_edge_hitcount(data: u64, id: u64) -> usize;
 }
 extern "C" {

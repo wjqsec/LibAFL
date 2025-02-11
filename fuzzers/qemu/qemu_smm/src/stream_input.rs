@@ -25,6 +25,7 @@ const PCD_STREAM_MASK : u128 =       0x60000000000000000000000000000000;
 const SMI_GROUP_INDEX_MASK : u128 =  0x70000000000000000000000000000000;
 const FUZZ_MEM_ENABLE_MASK : u128 =  0x80000000000000000000000000000000;
 const VARIABLE_STREAM_MASK :u128 =   0x90000000000000000000000000000000;
+const CPUID_STREAM_MASK : u128 =     0xa0000000000000000000000000000000;
 const STREAM_MASK : u128 =           0xf0000000000000000000000000000000;
 
 
@@ -39,6 +40,7 @@ pub enum StreamInfo {
     SmiGroupIndexStream(u128, usize, usize, u8),
     FuzzMemSwitchStream(u128, usize, usize, u8),
     VariableStream(u128, usize, usize, u8),
+    CpuidStream(u128, usize, usize, u8),
 }
 
 impl StreamInfo {
@@ -69,6 +71,9 @@ impl StreamInfo {
     fn new_variable_stream() -> Self {
         StreamInfo::VariableStream(VARIABLE_STREAM_MASK, 8192, 16348, 1)
     }
+    fn new_cpuid_stream() -> Self {
+        StreamInfo::VariableStream(CPUID_STREAM_MASK, 128, 256, 1)
+    }
     fn get_id(&self) -> u128 {
         match self {
             StreamInfo::IoStream(id, _, _, _) => id.clone(),
@@ -80,6 +85,7 @@ impl StreamInfo {
             StreamInfo::SmiGroupIndexStream(id, _, _, _) => id.clone(),
             StreamInfo::FuzzMemSwitchStream(id, _, _, _) => id.clone(),
             StreamInfo::VariableStream(id, _, _, _) => id.clone(),
+            StreamInfo::CpuidStream(id, _, _, _) => id.clone(),
         }
     }
     fn get_init_len(&self) -> usize {
@@ -93,6 +99,7 @@ impl StreamInfo {
             StreamInfo::SmiGroupIndexStream(_, init_len, _, _) => init_len.clone(),
             StreamInfo::FuzzMemSwitchStream(_, init_len, _, _) => init_len.clone(),
             StreamInfo::VariableStream(_, init_len, _, _) => init_len.clone(),
+            StreamInfo::CpuidStream(_, init_len, _, _) => init_len.clone(),
         }
     }
     fn get_max_len(&self) -> usize {
@@ -106,6 +113,7 @@ impl StreamInfo {
             StreamInfo::SmiGroupIndexStream(_, _, max_len, _) => max_len.clone(),
             StreamInfo::FuzzMemSwitchStream(_, _, max_len, _) => max_len.clone(),
             StreamInfo::VariableStream(_, _, max_len, _) => max_len.clone(),
+            StreamInfo::CpuidStream(_, _, max_len, _) => max_len.clone(),
         }  
     }
     fn get_weight(&self) -> u8 {
@@ -119,6 +127,7 @@ impl StreamInfo {
             StreamInfo::SmiGroupIndexStream(_, _, _, weight) => weight.clone(),
             StreamInfo::FuzzMemSwitchStream(_, _, _, weight) => weight.clone(),
             StreamInfo::VariableStream(_, _, _, weight) => weight.clone(),
+            StreamInfo::CpuidStream(_, _, _, weight) => weight.clone(),
         }  
     }
 }
@@ -373,6 +382,22 @@ impl StreamInputs {
                 }
                 else {
                     return Err(StreamError::StreamOutof(stream_info, len as usize));
+                }
+            },
+            std::collections::btree_map::Entry::Vacant(entry) => { 
+                return Err(StreamError::StreamNotFound(stream_info));
+            },
+        }
+    }
+    pub fn get_cpuid_fuzz_data(&mut self) -> Result<(*const u8), StreamError> {
+        let stream_info = StreamInfo::new_cpuid_stream();
+        match self.inputs.entry(stream_info.get_id()) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                if let Some(fuzz_input_ptr) = entry.get_mut().get_input_len_ptr(16) {
+                    return Ok(fuzz_input_ptr);
+                }
+                else {
+                    return Err(StreamError::StreamOutof(stream_info, 16));
                 }
             },
             std::collections::btree_map::Entry::Vacant(entry) => { 

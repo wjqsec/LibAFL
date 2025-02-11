@@ -59,6 +59,72 @@ pub fn set_exec_count(val :u64) {
 }
 
 
+fn wrmsr_common(pc : GuestReg, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32)
+{
+    unsafe {
+        let eax_info = *in_eax;
+        let edx_info = *in_edx;
+        debug!("wrmsr {pc:#x} {in_ecx:#x} {eax_info:#x} {edx_info:#x}");
+    }
+}
+fn cpuid_common(in_eax: u32, out_eax: *mut u32,out_ebx: *mut u32, out_ecx: *mut u32, out_edx: *mut u32, fuzz_input : &mut StreamInputs, cpu : CPU)
+{
+    match fuzz_input.get_cpuid_fuzz_data() {
+        Ok(fuzz_input_ptr) => { 
+            unsafe {
+                out_eax.copy_from(fuzz_input_ptr as *const u32, 1); 
+                out_ebx.copy_from((fuzz_input_ptr as *const u32).offset(1), 1);
+                out_ecx.copy_from((fuzz_input_ptr as *const u32).offset(2), 1);
+                out_edx.copy_from((fuzz_input_ptr as *const u32).offset(3), 1);
+            }
+        },
+        Err(io_err) => {    
+            match io_err {
+                StreamError::StreamNotFound(id) => {
+                    fuzz_input.generate_init_stream(id);
+                    match fuzz_input.get_cpuid_fuzz_data() {
+                        Ok(fuzz_input_ptr) => { 
+                            unsafe {
+                                out_eax.copy_from(fuzz_input_ptr as *const u32, 1); 
+                                out_ebx.copy_from((fuzz_input_ptr as *const u32).offset(1), 1);
+                                out_ecx.copy_from((fuzz_input_ptr as *const u32).offset(2), 1);
+                                out_edx.copy_from((fuzz_input_ptr as *const u32).offset(3), 1);
+                            }
+                        },
+                        _ => {    
+                            error!("cpuid stream generate error");
+                            exit_elegantly();
+                        }
+                    }
+                },
+                StreamError::StreamOutof(id, need_len) => {
+                    let append_data = fuzz_input.append_temp_stream(id, need_len);
+                    unsafe {
+                        out_eax.copy_from(append_data.as_ptr() as *const u32, 1); 
+                        out_ebx.copy_from((append_data.as_ptr() as *const u32).offset(1), 1);
+                        out_ecx.copy_from((append_data.as_ptr() as *const u32).offset(2), 1);
+                        out_edx.copy_from((append_data.as_ptr() as *const u32).offset(3), 1);
+                        NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+                    }
+                },
+                _ => {
+                    error!("cpuid stream get error");
+                    exit_elegantly();
+                }
+            }
+        }
+    }
+}
+pub fn cpuid_init_fuzz_phase(in_eax: u32, out_eax: *mut u32,out_ebx: *mut u32, out_ecx: *mut u32, out_edx: *mut u32, fuzz_input : &mut StreamInputs, cpu : CPU)
+{
+    unsafe {
+        if IN_FUZZ == false {
+            return;
+        }
+    }
+    cpuid_common(in_eax, out_eax, out_ebx, out_ecx, out_edx, fuzz_input, cpu);
+}
+
 fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut u8, 
                        fuzz_input : &mut StreamInputs, cpu : CPU)
 {   
@@ -402,6 +468,7 @@ pub fn rdmsr_init_fuzz_phase(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,f
             return;
         }
     }
+    rdmsr_common(in_ecx, out_eax, out_edx, fuzz_input);
 }
 pub fn rdmsr_smm_fuzz_phase(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fuzz_input : &mut StreamInputs) 
 {
@@ -628,7 +695,6 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 HOB_ADDR = arg1;
                 HOB_SIZE = arg2;
             }
-            info!("HOB addr {:#x} size {:#x}",arg1, arg2);
         },
         LIBAFL_QEMU_COMMAND_SMM_SMI_ENTER => {
             unsafe {

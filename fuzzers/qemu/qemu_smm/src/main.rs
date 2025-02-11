@@ -1,7 +1,6 @@
 
 mod qemu_args;
 mod sparse_memory;
-mod cpu_hooks;
 mod exit_qemu;
 mod init_fuzz_phase;
 mod smm_fuzz_phase;
@@ -309,15 +308,14 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
         // let mut devwrite_id : PreDeviceregWriteHookId = emulator.modules_mut().devwrite(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool| {
         //     pre_io_write_smm_fuzz_phase(base, offset,size , data , handled, modules.qemu().first_cpu().unwrap());
         // })));
-        let mut memrw_id = emulator.modules_mut().memrw(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr, rw : u32 , value : u128| {
-            let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
-            pre_memrw_smm_fuzz_phase(pc, addr, size, out_addr,rw, value, fuzz_input, modules.qemu().first_cpu().unwrap());
-        })));
         let rdmsr_id = emulator.modules_mut().rdmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32| {
             let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
             rdmsr_smm_fuzz_phase(in_ecx, out_eax, out_edx, fuzz_input);
         })));
-    
+        let mut memrw_id = emulator.modules_mut().memrw(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr, rw : u32 , value : u128| {
+            let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
+            pre_memrw_smm_fuzz_phase(pc, addr, size, out_addr,rw, value, fuzz_input, modules.qemu().first_cpu().unwrap());
+        })));
         let (seed_dirs, corpus_dir, crash_dir) = setup_smi_fuzz_phase_dirs(seed_path, corpus_path, crash_path);
         smm_phase_fuzz(seed_dirs, corpus_dir, crash_dir, &mut emulator, fuzz_time);
         exit_elegantly();
@@ -337,10 +335,18 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
     // let mut devwrite_id : PreDeviceregWriteHookId = emulator.modules_mut().devwrite(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool| {
     //     pre_io_write_init_fuzz_phase(base, offset,size , data , handled, modules.qemu().first_cpu().unwrap());
     // })));
+    let rdmsr_id = emulator.modules_mut().rdmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32| {
+        let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
+        rdmsr_init_fuzz_phase(in_ecx, out_eax, out_edx, fuzz_input);
+    })));
     let mut memrw_id = emulator.modules_mut().memrw(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr, rw : u32 , value : u128| {
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
         pre_memrw_init_fuzz_phase(pc, addr, size, out_addr,rw, value, fuzz_input, modules.qemu().first_cpu().unwrap());
     })));
+    // let cpuid_id = emulator.modules_mut().cpuid(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_eax: u32, out_eax: *mut u32,out_ebx: *mut u32, out_ecx: *mut u32, out_edx: *mut u32| {
+    //     let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
+    //     cpuid_init_fuzz_phase(in_eax, out_eax, out_ebx, out_ecx, out_edx, fuzz_input, modules.qemu().first_cpu().unwrap());
+    // })));
     
 
     let mut module_index = 0;
@@ -377,8 +383,8 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
     }
     FuzzerSnapshot::save_to_file(qemu, snapshot_bin);
     devread_id.remove(true);
-    // devwrite_id.remove(true);
     memrw_id.remove(true);
+    rdmsr_id.remove(true);
 
     let mut devread_id : PostDeviceregReadHookId = emulator.modules_mut().devread(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32| {
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
@@ -521,11 +527,18 @@ fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_
     // let mut devwrite_id : PreDeviceregWriteHookId = emulator.modules_mut().devwrite(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool| {
     //     pre_io_write_init_fuzz_phase(base, offset,size , data , handled, modules.qemu().first_cpu().unwrap());
     // })));
+    let rdmsr_id = emulator.modules_mut().rdmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32| {
+        let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
+        rdmsr_init_fuzz_phase(in_ecx, out_eax, out_edx, fuzz_input);
+    })));
     let mut memrw_id = emulator.modules_mut().memrw(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr, rw : u32 , value : u128| {
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
         pre_memrw_init_fuzz_phase(pc, addr, size, out_addr,rw, value, fuzz_input, modules.qemu().first_cpu().unwrap());
     })));
-    
+    // let cpuid_id = emulator.modules_mut().cpuid(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_eax: u32, out_eax: *mut u32,out_ebx: *mut u32, out_ecx: *mut u32, out_edx: *mut u32| {
+    //     let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
+    //     cpuid_init_fuzz_phase(in_eax, out_eax, out_ebx, out_ecx, out_edx, fuzz_input, modules.qemu().first_cpu().unwrap());
+    // })));
 
     let mut module_index = 0;
     loop {
@@ -565,7 +578,9 @@ fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_
     }
     devread_id.remove(true);
     // devwrite_id.remove(true);
+    rdmsr_id.remove(true);
     memrw_id.remove(true);
+    // cpuid_id.remove(true);
 
     info!("init phase finish, now start fuzz phase");
     FuzzerSnapshot::restore_from_file(qemu, snapshot_bin);

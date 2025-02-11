@@ -85,17 +85,20 @@ impl<S> EmulatorModule<S> for CmpLogModule
 where
     S: Unpin + UsesInput + HasMetadata,
 {
-    fn pre_exec<ET>(&mut self, emulator_modules: &mut EmulatorModules<ET, S>, _input: &<S as UsesInput>::Input)
+    fn first_exec<ET>(&mut self, emulator_modules: &mut EmulatorModules<ET, S>)
         where
             ET: EmulatorModuleTuple<S>, {
         self.hook_id = Some(emulator_modules.cmps(
             Hook::Function(gen_unique_cmp_ids::<ET, S>),
-            Hook::Raw(trace_cmp1_cmplog),
-            Hook::Raw(trace_cmp2_cmplog),
-            Hook::Raw(trace_cmp4_cmplog),
-            Hook::Raw(trace_cmp8_cmplog),
+            Hook::Function(trace_cmp1_cmplog::<ET, S>),
+            Hook::Function(trace_cmp2_cmplog::<ET, S>),
+            Hook::Function(trace_cmp4_cmplog::<ET, S>),
+            Hook::Function(trace_cmp8_cmplog::<ET, S>),
         ));
-        
+    }
+    fn pre_exec<ET>(&mut self, emulator_modules: &mut EmulatorModules<ET, S>, _input: &<S as UsesInput>::Input)
+        where
+            ET: EmulatorModuleTuple<S>, {
     }
 
     fn post_exec<OT, ET>(
@@ -107,7 +110,7 @@ where
         ) where
             OT: libafl::prelude::ObserversTuple<S>,
             ET: EmulatorModuleTuple<S>, {
-        self.hook_id.unwrap().remove(false);
+        // self.hook_id.unwrap().remove(false);
     }
 }
 
@@ -146,10 +149,10 @@ where
     {
         emulator_modules.cmps(
             Hook::Function(gen_hashed_cmp_ids::<ET, S>),
-            Hook::Raw(trace_cmp1_cmplog),
-            Hook::Raw(trace_cmp2_cmplog),
-            Hook::Raw(trace_cmp4_cmplog),
-            Hook::Raw(trace_cmp8_cmplog),
+            Hook::Function(trace_cmp1_cmplog),
+            Hook::Function(trace_cmp2_cmplog),
+            Hook::Function(trace_cmp4_cmplog),
+            Hook::Function(trace_cmp8_cmplog),
         );
     }
 }
@@ -164,6 +167,9 @@ where
     ET: EmulatorModuleTuple<S>,
     S: Unpin + UsesInput + HasMetadata,
 {
+    if emulator_modules.qemu().get_infuzz() {
+        return None;
+    }
     if let Some(h) = emulator_modules.get::<CmpLogModule>() {
         if !h.must_instrument(pc) {
             return None;
@@ -203,7 +209,13 @@ where
     Some(hash_me(pc.into()) & (CMPLOG_MAP_W as u64 - 1))
 }
 
-pub extern "C" fn trace_cmp1_cmplog(_: *const (), id: u64, v0: u8, v1: u8) {
+fn trace_cmp1_cmplog<ET, S>(emulator_modules: &mut EmulatorModules<ET, S>, state: Option<&mut S>, id: u64, v0: u8, v1: u8)
+where
+    ET: EmulatorModuleTuple<S>,
+    S: Unpin + UsesInput + HasMetadata, {
+    if emulator_modules.qemu().get_infuzz() {
+        return;
+    }
     if v0 == v1 {
         return;
     }
@@ -212,7 +224,13 @@ pub extern "C" fn trace_cmp1_cmplog(_: *const (), id: u64, v0: u8, v1: u8) {
     }
 }
 
-pub extern "C" fn trace_cmp2_cmplog(_: *const (), id: u64, v0: u16, v1: u16) {
+fn trace_cmp2_cmplog<ET, S>(emulator_modules: &mut EmulatorModules<ET, S>, state: Option<&mut S>, id: u64, v0: u16, v1: u16) 
+where
+    ET: EmulatorModuleTuple<S>,
+    S: Unpin + UsesInput + HasMetadata,{
+    if emulator_modules.qemu().get_infuzz() {
+        return;
+    }
     if v0 == v1 {
         return;
     }
@@ -221,7 +239,13 @@ pub extern "C" fn trace_cmp2_cmplog(_: *const (), id: u64, v0: u16, v1: u16) {
     }
 }
 
-pub extern "C" fn trace_cmp4_cmplog(_: *const (), id: u64, v0: u32, v1: u32) {
+fn trace_cmp4_cmplog<ET, S>(emulator_modules: &mut EmulatorModules<ET, S>, state: Option<&mut S>, id: u64, v0: u32, v1: u32) 
+where
+    ET: EmulatorModuleTuple<S>,
+    S: Unpin + UsesInput + HasMetadata,{
+    if emulator_modules.qemu().get_infuzz() {
+        return;
+    }
     if v0 == v1 {
         return;
     }
@@ -230,7 +254,13 @@ pub extern "C" fn trace_cmp4_cmplog(_: *const (), id: u64, v0: u32, v1: u32) {
     }
 }
 
-pub extern "C" fn trace_cmp8_cmplog(_: *const (), id: u64, v0: u64, v1: u64) {
+fn trace_cmp8_cmplog<ET, S>(emulator_modules: &mut EmulatorModules<ET, S>, state: Option<&mut S>, id: u64, v0: u64, v1: u64) 
+where
+    ET: EmulatorModuleTuple<S>,
+    S: Unpin + UsesInput + HasMetadata,{
+    if emulator_modules.qemu().get_infuzz() {
+        return;
+    }
     if v0 == v1 {
         return;
     } 
