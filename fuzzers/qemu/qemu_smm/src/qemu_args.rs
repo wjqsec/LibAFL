@@ -27,6 +27,8 @@ pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String, log
         qemu_firmware_dir.to_string_lossy().to_string(),
         "-serial".to_string(),
         "null".to_string(),
+        "-global".to_string(),
+        "mch.extended-tseg-mbytes=56".to_string(),
     ]
 }
 pub fn get_snapshot_dev_filter_list() -> Vec<String>    

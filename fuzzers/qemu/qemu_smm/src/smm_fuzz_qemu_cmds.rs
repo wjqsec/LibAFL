@@ -49,6 +49,7 @@ pub const LIBAFL_QEMU_END_SMM_FUZZ_START : u64  = 6;
 pub const LIBAFL_QEMU_END_SMM_FUZZ_END : u64  = 7;
 pub const LIBAFL_QEMU_END_SMM_INIT_UNSUPPORT : u64 = 8;
 pub const LIBAFL_QEMU_END_SMM_ASSERT : u64 = 9;
+pub const LIBAFL_QEMU_END_SMM_INIT_ERROR : u64 = 10;
 
 
 pub const SMM_FUZZ_RUN : u64 = 0;

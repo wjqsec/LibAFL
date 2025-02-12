@@ -403,7 +403,7 @@ pub fn pre_memrw_smm_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , ou
             return;
         }
     }
-    if addr >= 0x7000000 && addr < 0x8000000 { // inside sram
+    if addr >= 0x4800000 && addr < 0x8000000 { // inside sram
         return;
     }
     if addr >= unsafe {COMMBUF_ADDR} && addr < unsafe {COMMBUF_ADDR + COMMBUF_SIZE} {  //outside comm buffer

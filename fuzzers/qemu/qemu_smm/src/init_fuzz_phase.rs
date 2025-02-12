@@ -68,10 +68,11 @@ use crate::coverage::*;
 static mut SMM_INIT_FUZZ_EXIT_SNAPSHOT : *mut FuzzerSnapshot = ptr::null_mut();
 
 static mut TIMEOUT_TIMES : u64 = 0;
-static mut END_TIMES : u64 = 0;
+static mut END_ERROR_TIMES : u64 = 0;
 static mut CRASH_TIMES : u64 = 0;
 static mut STREAM_OVER_TIMES : u64 = 0;
 static mut ASSERT_TIMES : u64 = 0;
+static mut NOTFOUND_TIMES : u64 = 0;
 
 fn gen_init_random_seed(dir : &PathBuf) {
     let mut initial_input = MultipartInput::<BytesInput>::new();
@@ -109,10 +110,11 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
     unsafe {
         SMM_INIT_FUZZ_EXIT_SNAPSHOT = ptr::null_mut();
         TIMEOUT_TIMES = 0;
-        END_TIMES = 0;
+        END_ERROR_TIMES = 0;
         CRASH_TIMES = 0;
         STREAM_OVER_TIMES = 0;
         ASSERT_TIMES = 0;
+        NOTFOUND_TIMES = 0;
     }
     unskip();
 
@@ -146,10 +148,16 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                 debug!("qemu_run_to_end sync exit {:#x} {:#x} {:#x}",cmd,sync_exit_reason,pc);
                 if cmd == LIBAFL_QEMU_COMMAND_END {
                     match sync_exit_reason {
-                        LIBAFL_QEMU_END_SMM_INIT_UNSUPPORT | LIBAFL_QEMU_END_SMM_ASSERT => {
+                        LIBAFL_QEMU_END_SMM_INIT_ERROR => {
+                            exit_code = ExitKind::Ok;
+                            unsafe {
+                                END_ERROR_TIMES += 1;
+                            }
+                        },
+                        LIBAFL_QEMU_END_SMM_INIT_UNSUPPORT => {
                             exit_code = ExitKind::Ok; // init phase does not have crash we assume
                             unsafe {
-                                END_TIMES += 1;
+                                NOTFOUND_TIMES += 1;
                             }
                         },
                         LIBAFL_QEMU_END_SMM_INIT_END => {
@@ -161,7 +169,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                             }
                             exit_code = ExitKind::Ok;
                         },
-                        LIBAFL_QEMU_END_CRASH => {
+                        LIBAFL_QEMU_END_CRASH | LIBAFL_QEMU_END_SMM_ASSERT => {
                             exit_code = ExitKind::Ok;
                             unsafe {
                                 CRASH_TIMES += 1;
@@ -248,7 +256,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
     ).unwrap();
 
     let mon = SimpleMonitor::new(|s| 
-        info!("{s} crash:{} timeout:{} unsupport:{}",unsafe{CRASH_TIMES}, unsafe {TIMEOUT_TIMES}, unsafe {END_TIMES})  
+        info!("{s} crash:{} timeout:{} unsupport:{} error:{}",unsafe{CRASH_TIMES}, unsafe {TIMEOUT_TIMES}, unsafe {NOTFOUND_TIMES}, unsafe{END_ERROR_TIMES})  
     );
     let mut mgr = SimpleEventManager::new(mon);
     let scheduler = PowerQueueScheduler::new(&mut state, &mut edges_observer, PowerSchedule::FAST);
@@ -292,11 +300,11 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         fuzzer
             .fuzz_one(&mut stages, &mut shadow_executor, &mut state, &mut mgr)
             .unwrap();
-        mgr.maybe_report_progress(&mut state, Duration::from_secs(60));
+        mgr.maybe_report_progress(&mut state, Duration::from_secs(20));
         if ctrlc_pressed() {
             exit_elegantly();
         }
-        if libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 60 * 1 {
+        if (libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 60 * 1) || (unsafe{NOTFOUND_TIMES} > 1000) {
             skip();
             let dummy_testcase = state.corpus().get(state.corpus().last().unwrap()).unwrap().clone().take().clone().input().clone().unwrap();
             fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &dummy_testcase);
@@ -373,7 +381,7 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
                 debug!("qemu_run_to_end sync exit {:#x} {:#x} {:#x}",cmd,sync_exit_reason,pc);
                 if cmd == LIBAFL_QEMU_COMMAND_END {
                     match sync_exit_reason {
-                        LIBAFL_QEMU_END_SMM_INIT_UNSUPPORT | LIBAFL_QEMU_END_SMM_ASSERT => {
+                        LIBAFL_QEMU_END_SMM_INIT_UNSUPPORT | LIBAFL_QEMU_END_SMM_INIT_ERROR => {
                             exit_code = ExitKind::Ok; // init phase does not have crash we assume
                         },
                         LIBAFL_QEMU_END_SMM_INIT_END => {
@@ -385,7 +393,7 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
                             }
                             exit_code = ExitKind::Ok;
                         },
-                        LIBAFL_QEMU_END_CRASH => {
+                        LIBAFL_QEMU_END_CRASH | LIBAFL_QEMU_END_SMM_ASSERT => {
                             exit_code = ExitKind::Ok;
                         },
                         _ => {
