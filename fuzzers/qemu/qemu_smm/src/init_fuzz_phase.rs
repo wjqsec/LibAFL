@@ -74,6 +74,10 @@ static mut STREAM_OVER_TIMES : u64 = 0;
 static mut ASSERT_TIMES : u64 = 0;
 static mut NOTFOUND_TIMES : u64 = 0;
 
+static mut LAST_EXIT_CRASH : bool = false;
+
+const INIT_FUZZ_TIMEOUT_BBL : u64 = 100000;
+
 fn gen_init_random_seed(dir : &PathBuf) {
     let mut initial_input = MultipartInput::<BytesInput>::new();
     initial_input.add_part(0 as u128, BytesInput::new(vec![]),0x10,0);
@@ -115,6 +119,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         STREAM_OVER_TIMES = 0;
         ASSERT_TIMES = 0;
         NOTFOUND_TIMES = 0;
+        LAST_EXIT_CRASH = false;
     }
     unskip();
 
@@ -129,33 +134,32 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
     }
     emulator.modules_mut().first_exec_all();
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
-        debug!("new run");
+        let in_simulator = state.emulator_mut();
+        let in_qemu: Qemu = in_simulator.qemu();
+        let in_cpu = in_qemu.first_cpu().unwrap();
         let mut inputs = StreamInputs::from_multiinput(input);
         unsafe {  
             GLOB_INPUT = (&mut inputs) as *mut StreamInputs; 
         }
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
-        set_fuzz_mem_switch(fuzz_input);
-        let in_simulator = state.emulator_mut();
-        let in_qemu: Qemu = in_simulator.qemu();
-        let in_cpu = in_qemu.first_cpu().unwrap();
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, 500000,false, true);
-        let exit_code;
-        debug!("new run exit {:?}",qemu_exit_reason);
+        // set_fuzz_mem_switch(fuzz_input);
+
+        
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, INIT_FUZZ_TIMEOUT_BBL,unsafe{LAST_EXIT_CRASH}, true);
+        unsafe {
+            LAST_EXIT_CRASH = false;
+        }
         if let Ok(qemu_exit_reason) = qemu_exit_reason
         {
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
-                debug!("qemu_run_to_end sync exit {:#x} {:#x} {:#x}",cmd,sync_exit_reason,pc);
                 if cmd == LIBAFL_QEMU_COMMAND_END {
                     match sync_exit_reason {
-                        LIBAFL_QEMU_END_SMM_INIT_ERROR => {
-                            exit_code = ExitKind::Ok;
+                        LIBAFL_QEMU_END_SMM_INIT_ERROR | LIBAFL_QEMU_END_SMM_ASSERT => {
                             unsafe {
                                 END_ERROR_TIMES += 1;
                             }
                         },
                         LIBAFL_QEMU_END_SMM_INIT_UNSUPPORT => {
-                            exit_code = ExitKind::Ok; // init phase does not have crash we assume
                             unsafe {
                                 NOTFOUND_TIMES += 1;
                             }
@@ -167,64 +171,53 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                                     SMM_INIT_FUZZ_EXIT_SNAPSHOT = Box::into_raw(box_snap);
                                 }
                             }
-                            exit_code = ExitKind::Ok;
                         },
-                        LIBAFL_QEMU_END_CRASH | LIBAFL_QEMU_END_SMM_ASSERT => {
-                            exit_code = ExitKind::Ok;
+                        LIBAFL_QEMU_END_CRASH => {
                             unsafe {
+                                LAST_EXIT_CRASH = true;
                                 CRASH_TIMES += 1;
                             }
                         },
                         _ => {
-                            error!("exit 1");
+                            error!("exit sync_exit_reason {sync_exit_reason}");
                             exit_elegantly();
-                            exit_code = ExitKind::Ok;
                         },
                     }
                 }
                 else {
-                    error!("exit 2");
+                    error!("exit cmd {cmd} {pc:#x}");
                     exit_elegantly();
-                    exit_code = ExitKind::Ok;
                 }
             }
             else if let QemuExitReason::Timeout = qemu_exit_reason {
                 unsafe {
                     TIMEOUT_TIMES += 1;
                 }
-                exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::StreamNotFound = qemu_exit_reason {
-                exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::StreamOutof = qemu_exit_reason {
-                exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 error!("Ctrl+C");
                 exit_elegantly();
-                exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason {
-                error!("exit 4");
+                error!("exit Breakpoint");
                 exit_elegantly();
-                
-                exit_code = ExitKind::Ok;
             }
             else {
-                error!("exit 5");
+                error!("exit unknown");
                 exit_elegantly();
-                exit_code = ExitKind::Ok;
             }
         }
         else    {
             error!("exit 6");
             exit_elegantly();
-            exit_code = ExitKind::Ok;
         }
         
             
-        exit_code
+        ExitKind::Ok
     };
     let mut edges_observer = unsafe {
         HitcountsMapObserver::new(VariableMapObserver::from_mut_slice(
@@ -304,7 +297,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         if ctrlc_pressed() {
             exit_elegantly();
         }
-        if (libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 60 * 1) || (unsafe{NOTFOUND_TIMES} > 1000) {
+        if (libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 60 * 1 ) || !missing_smm_protocols_empty() {
             skip();
             let dummy_testcase = state.corpus().get(state.corpus().last().unwrap()).unwrap().clone().take().clone().input().clone().unwrap();
             fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &dummy_testcase);
@@ -325,7 +318,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                             snapshot.delete(qemu);
                             return SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::from_qemu(qemu));
                         }
-                    }
+                    } 
                 }
             }
             error!("fuzz one module over, run to next module error");
@@ -345,6 +338,13 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
     let snapshot = FuzzerSnapshot::from_qemu(qemu);
     unsafe {
         SMM_INIT_FUZZ_EXIT_SNAPSHOT = ptr::null_mut();
+        TIMEOUT_TIMES = 0;
+        END_ERROR_TIMES = 0;
+        CRASH_TIMES = 0;
+        STREAM_OVER_TIMES = 0;
+        ASSERT_TIMES = 0;
+        NOTFOUND_TIMES = 0;
+        LAST_EXIT_CRASH = false;
     }
     unskip();
 
@@ -361,28 +361,35 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
     
     emulator.modules_mut().first_exec_all();
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
-        
-        debug!("new run");
-        let mut inputs = StreamInputs::from_multiinput(input);
-        unsafe {  
-            GLOB_INPUT = (&mut inputs) as *mut StreamInputs;
-        }
-        let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
-        set_fuzz_mem_switch(fuzz_input);
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu = in_qemu.first_cpu().unwrap();
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, 500000,false, true);
-        let exit_code;
-        debug!("new run exit {:?}",qemu_exit_reason);
+        let mut inputs = StreamInputs::from_multiinput(input);
+        unsafe {  
+            GLOB_INPUT = (&mut inputs) as *mut StreamInputs; 
+        }
+        let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
+        // set_fuzz_mem_switch(fuzz_input);
+
+        
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, INIT_FUZZ_TIMEOUT_BBL,unsafe{LAST_EXIT_CRASH}, true);
+        unsafe {
+            LAST_EXIT_CRASH = false;
+        }
         if let Ok(qemu_exit_reason) = qemu_exit_reason
         {
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
-                debug!("qemu_run_to_end sync exit {:#x} {:#x} {:#x}",cmd,sync_exit_reason,pc);
                 if cmd == LIBAFL_QEMU_COMMAND_END {
                     match sync_exit_reason {
-                        LIBAFL_QEMU_END_SMM_INIT_UNSUPPORT | LIBAFL_QEMU_END_SMM_INIT_ERROR => {
-                            exit_code = ExitKind::Ok; // init phase does not have crash we assume
+                        LIBAFL_QEMU_END_SMM_INIT_ERROR | LIBAFL_QEMU_END_SMM_ASSERT => {
+                            unsafe {
+                                END_ERROR_TIMES += 1;
+                            }
+                        },
+                        LIBAFL_QEMU_END_SMM_INIT_UNSUPPORT => {
+                            unsafe {
+                                NOTFOUND_TIMES += 1;
+                            }
                         },
                         LIBAFL_QEMU_END_SMM_INIT_END => {
                             unsafe {
@@ -391,56 +398,53 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
                                     SMM_INIT_FUZZ_EXIT_SNAPSHOT = Box::into_raw(box_snap);
                                 }
                             }
-                            exit_code = ExitKind::Ok;
                         },
-                        LIBAFL_QEMU_END_CRASH | LIBAFL_QEMU_END_SMM_ASSERT => {
-                            exit_code = ExitKind::Ok;
+                        LIBAFL_QEMU_END_CRASH => {
+                            unsafe {
+                                LAST_EXIT_CRASH = true;
+                                CRASH_TIMES += 1;
+                            }
                         },
                         _ => {
-                            error!("exit 1");
+                            error!("exit sync_exit_reason {sync_exit_reason}");
                             exit_elegantly();
-                            exit_code = ExitKind::Ok;
                         },
                     }
                 }
                 else {
-                    error!("exit 2");
+                    error!("exit cmd {cmd} {pc:#x}");
                     exit_elegantly();
-                    exit_code = ExitKind::Ok;
                 }
             }
             else if let QemuExitReason::Timeout = qemu_exit_reason {
-                exit_code = ExitKind::Ok;
+                unsafe {
+                    TIMEOUT_TIMES += 1;
+                }
             }
             else if let QemuExitReason::StreamNotFound = qemu_exit_reason {
-                exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::StreamOutof = qemu_exit_reason {
-                exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 error!("Ctrl+C");
                 exit_elegantly();
-                exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason {
-                error!("exit 4");
+                error!("exit Breakpoint");
                 exit_elegantly();
-                
-                exit_code = ExitKind::Ok;
             }
             else {
-                error!("exit 5");
+                error!("exit unknown");
                 exit_elegantly();
-                exit_code = ExitKind::Ok;
             }
         }
         else    {
             error!("exit 6");
             exit_elegantly();
-            exit_code = ExitKind::Ok;
         }
-        exit_code
+        
+            
+        ExitKind::Ok
     };
 
     let mut feedback = ();

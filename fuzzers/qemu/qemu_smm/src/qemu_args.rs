@@ -29,6 +29,8 @@ pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String, log
         "null".to_string(),
         "-global".to_string(),
         "mch.extended-tseg-mbytes=56".to_string(),
+        // "-m".to_string(),
+        // "256M".to_string(),
     ]
 }
 pub fn get_snapshot_dev_filter_list() -> Vec<String>    

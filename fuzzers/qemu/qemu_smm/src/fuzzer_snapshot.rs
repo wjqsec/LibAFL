@@ -59,6 +59,7 @@ impl FuzzerSnapshot {
     pub fn restore_fuzz_snapshot(&self, qemu : Qemu, full_root_restore : bool) {
         unsafe {
             qemu.restore_fast_snapshot(self.qemu_snapshot.unwrap(), full_root_restore);
+            qemu.flush_jit();
         }
     }
 
