@@ -76,8 +76,8 @@ static mut NOTFOUND_TIMES : u64 = 0;
 
 static mut LAST_EXIT_CRASH : bool = false;
 
-const INIT_FUZZ_TIMEOUT_BBL : u64 = 100000;
-
+const INIT_FUZZ_TIMEOUT_BBL : u64 = 500000;
+const INIT_FUZZ_TIMEOUT_MINUTE : u64 = 3 * 60;
 fn gen_init_random_seed(dir : &PathBuf) {
     let mut initial_input = MultipartInput::<BytesInput>::new();
     initial_input.add_part(0 as u128, BytesInput::new(vec![]),0x10,0);
@@ -143,7 +143,6 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         }
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
         // set_fuzz_mem_switch(fuzz_input);
-
         
         let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, INIT_FUZZ_TIMEOUT_BBL,unsafe{LAST_EXIT_CRASH}, true);
         unsafe {
@@ -197,6 +196,9 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
             else if let QemuExitReason::StreamNotFound = qemu_exit_reason {
             }
             else if let QemuExitReason::StreamOutof = qemu_exit_reason {
+                unsafe {
+                    STREAM_OVER_TIMES += 1;
+                }
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 error!("Ctrl+C");
@@ -249,7 +251,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
     ).unwrap();
 
     let mon = SimpleMonitor::new(|s| 
-        info!("{s} crash:{} timeout:{} unsupport:{} error:{}",unsafe{CRASH_TIMES}, unsafe {TIMEOUT_TIMES}, unsafe {NOTFOUND_TIMES}, unsafe{END_ERROR_TIMES})  
+        info!("{s} crash:{} timeout:{} stream:{} unsupport:{} error:{}",unsafe{CRASH_TIMES}, unsafe {TIMEOUT_TIMES},unsafe{STREAM_OVER_TIMES}, unsafe {NOTFOUND_TIMES}, unsafe{END_ERROR_TIMES})  
     );
     let mut mgr = SimpleEventManager::new(mon);
     let scheduler = PowerQueueScheduler::new(&mut state, &mut edges_observer, PowerSchedule::FAST);
@@ -297,7 +299,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         if ctrlc_pressed() {
             exit_elegantly();
         }
-        if (libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 60 * 1 ) || !missing_smm_protocols_empty() {
+        if (libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > INIT_FUZZ_TIMEOUT_MINUTE ) || !missing_smm_protocols_empty() {
             skip();
             let dummy_testcase = state.corpus().get(state.corpus().last().unwrap()).unwrap().clone().take().clone().input().clone().unwrap();
             fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &dummy_testcase);

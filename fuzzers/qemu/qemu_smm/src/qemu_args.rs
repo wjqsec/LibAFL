@@ -3,7 +3,6 @@ use std::string::*;
 use std::ffi::{CString, CStr};
 use std::path::Path;
 
-const OVMF_MODE : &str = "RELEASE";
 pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String, log : &String) -> Vec<String>
 {
     let project_dir = env!("CARGO_MANIFEST_DIR");

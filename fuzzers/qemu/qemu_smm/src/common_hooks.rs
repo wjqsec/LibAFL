@@ -41,6 +41,9 @@ static mut COMMBUF_HOST_PTR : *mut u8 = 0 as *mut u8;
 static mut HOB_ADDR : u64 = 0;
 static mut HOB_SIZE : u64 = 0;
 
+static mut DXE_BUFFER_ADDR : u64 = 0;
+static mut DXE_BUFFER_SIZE : u64 = 0;
+
 static mut DEBUG_TRACE_SWITCH : bool = false;
 
 static mut MISSING_PROTOCOLS: Lazy<HashSet<Uuid>> = Lazy::new(|| {
@@ -66,12 +69,12 @@ pub fn set_exec_count(val :u64) {
 }
 
 
-fn wrmsr_common(pc : GuestReg, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32)
+pub fn wrmsr_common(in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32)
 {
     unsafe {
         let eax_info = *in_eax;
         let edx_info = *in_edx;
-        debug!("wrmsr {pc:#x} {in_ecx:#x} {eax_info:#x} {edx_info:#x}");
+        debug!("wrmsr {in_ecx:#x} {eax_info:#x} {edx_info:#x}");
     }
 }
 fn cpuid_common(in_eax: u32, out_eax: *mut u32,out_ebx: *mut u32, out_ecx: *mut u32, out_edx: *mut u32, fuzz_input : &mut StreamInputs, cpu : CPU)
@@ -193,7 +196,7 @@ pub fn post_io_read_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : 
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
     let addr = base + offset;
     unsafe {
-        if IN_FUZZ == false || io_err == 0 {
+        if IN_FUZZ == false {
             return;
         }
     }
@@ -208,9 +211,6 @@ pub fn post_io_read_smm_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : u
         if IN_FUZZ == false || IN_SMI == false {
             return;
         }
-        // if io_err == 0 && addr != 0xb2 && addr != 0xb3 {
-        //     return;
-        // }
     }
     post_io_read_common(pc, addr, size, data, fuzz_input, cpu);
 }
@@ -241,17 +241,25 @@ pub fn pre_io_write_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : 
         if IN_FUZZ == false {
             return;
         }
+        if addr != 0x402 {
+            *handled = true;
+            return;
+        }
+        
     }
     pre_io_write_common(base, offset, size, data, handled, cpu);
 }
 pub fn pre_io_write_smm_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool, cpu : CPU)
 {
+    let addr = base + offset;
     unsafe {
         if IN_FUZZ == false || IN_SMI == false {
             return;
         }
-        *handled = true;
-        return;
+        if addr != 0x402 {
+            *handled = true;
+            return;
+        }
     }
     pre_io_write_common(base, offset, size, data, handled, cpu);
 }
@@ -389,12 +397,20 @@ pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , o
             return;
         }
         if addr < 0x10000000 {  
-            if  addr < HOB_ADDR  || addr >= (HOB_ADDR + HOB_SIZE) {  // hob must be fuzzed
+            if !(
+                addr >= HOB_ADDR && addr < (HOB_ADDR + 2) 
+                || addr >= ( HOB_ADDR + 8 ) && addr < (HOB_ADDR + HOB_SIZE) 
+                || addr >= DXE_BUFFER_ADDR && addr < (DXE_BUFFER_ADDR + DXE_BUFFER_SIZE)
+            ) {
                 return;
             }
-            if addr >= HOB_ADDR + 2 && addr < HOB_ADDR + 8 { // HOB length not to mutate
-                return;
-            }
+                
+            // if  addr < HOB_ADDR  || addr >= (HOB_ADDR + HOB_SIZE) {  // hob must be fuzzed
+            //     return;
+            // }
+            // if addr >= HOB_ADDR + 2 && addr < HOB_ADDR + 8 { // HOB length not to mutate
+            //     return;
+            // }
         } else {  // higher than 0xe0000000, might be fuzzed
             // if unsafe {!MEM_SHOULD_FUZZ_SWITCH} {
             //     return;
@@ -666,7 +682,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             let addr = arg2;
             if unsafe { IN_FUZZ } {
                 ret = 1;
-                if len != 0 {
+                if len > 0 && len <= 8 {
                     match fuzz_input.get_pcd_fuzz_data(len) {
                         Ok((fuzz_input_ptr)) => { 
                             unsafe {
@@ -702,6 +718,11 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                 },
                             }
                         }
+                    }
+                } else if len == 0{
+                    let ret_pcd_ptr : u64 = 0xb000000000000000;  
+                    unsafe {
+                        cpu.write_mem(addr, &ret_pcd_ptr.to_le_bytes());
                     }
                 }
             } else {
@@ -860,6 +881,14 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 }
                 ret = unsafe {MISSING_PROTOCOLS.len()} as u64;
             }
+        },
+        LIBAFL_QEMU_COMMAND_SMM_REPORT_DXE_BUFFER => {
+            unsafe {
+                DXE_BUFFER_ADDR = arg1;
+                DXE_BUFFER_SIZE = arg2;
+                info!("DXE buffer {:#x} {:#x}",DXE_BUFFER_ADDR, DXE_BUFFER_SIZE);
+            }
+            
         },
         _ => { 
             error!("backdoor wrong cmd {:}",cmd); 
