@@ -77,6 +77,7 @@ where
     Timeout,
     StreamNotFound,
     StreamOutof,
+    Crash,
 }
 
 #[derive(Debug, Clone)]
@@ -457,6 +458,7 @@ where
             EmulatorExitResult::Timeout => write!(f, "Timeout"),
             EmulatorExitResult::StreamNotFound => write!(f, "StreamNotFound"),
             EmulatorExitResult::StreamOutof => write!(f, "StreamOutof"),
+            EmulatorExitResult::Crash => write!(f, "Crash"),
         }
     }
 }
@@ -742,6 +744,9 @@ where
                 QemuExitReason::StreamOutof => {
                     EmulatorExitResult::StreamOutof
                 },
+                QemuExitReason::Crash => {
+                    EmulatorExitResult::Crash
+                }
             }),
             Err(qemu_exit_reason_error) => Err(match qemu_exit_reason_error {
                 QemuExitError::UnexpectedExit => EmulatorExitError::UnexpectedExit,

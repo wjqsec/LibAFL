@@ -200,6 +200,12 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                     STREAM_OVER_TIMES += 1;
                 }
             }
+            else if let QemuExitReason::Crash = qemu_exit_reason {
+                unsafe {
+                    LAST_EXIT_CRASH = true;
+                    CRASH_TIMES += 1;
+                }
+            }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 error!("Ctrl+C");
                 exit_elegantly();
@@ -426,6 +432,12 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
             else if let QemuExitReason::StreamNotFound = qemu_exit_reason {
             }
             else if let QemuExitReason::StreamOutof = qemu_exit_reason {
+            }
+            else if let QemuExitReason::Crash = qemu_exit_reason {
+                unsafe {
+                    LAST_EXIT_CRASH = true;
+                    CRASH_TIMES += 1;
+                }
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 error!("Ctrl+C");

@@ -17148,6 +17148,7 @@ pub const libafl_exit_reason_kind_STREAM_NOTFOUND: libafl_exit_reason_kind =
     libafl_exit_reason_kind(4);
 pub const libafl_exit_reason_kind_STREAM_OUTOF: libafl_exit_reason_kind =
     libafl_exit_reason_kind(5);
+pub const libafl_exit_reason_kind_CRASH: libafl_exit_reason_kind = libafl_exit_reason_kind(6);
 impl ::std::ops::BitOr<libafl_exit_reason_kind> for libafl_exit_reason_kind {
     type Output = Self;
     #[inline]
@@ -17469,6 +17470,9 @@ extern "C" {
 }
 extern "C" {
     pub fn libafl_qemu_exit_stream_outof(cpu: *mut CPUState);
+}
+extern "C" {
+    pub fn libafl_qemu_exit_crash(cpu: *mut CPUState);
 }
 extern "C" {
     pub fn libafl_qemu_cpu_stopped(cpu: *mut CPUState) -> bool;

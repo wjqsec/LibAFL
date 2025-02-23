@@ -17,7 +17,9 @@ use crate::smi_info::*;
 use crate::coverage::*;
 use crate::smm_fuzz_qemu_cmds::*;
 
-
+const SMRAM_START : u64 = 0x4800000;
+const SMRAM_END : u64 = 0x8000000;
+const UEFI_RAM_END : u64 = 0x100000000;
 pub static mut IN_FUZZ : bool = false;
 
 pub static mut IN_SMI : bool = false;
@@ -36,6 +38,7 @@ static mut SMI_SELECT_BUFFER_HOST_PTR : *mut u8 = 0 as *mut u8;
 
 static mut COMMBUF_ADDR : u64 = 0;
 static mut COMMBUF_SIZE : u64 = 0;
+static mut COMMBUF_ACTUAL_SIZE : u64 = 0;
 static mut COMMBUF_HOST_PTR : *mut u8 = 0 as *mut u8;
 
 static mut HOB_ADDR : u64 = 0;
@@ -49,6 +52,20 @@ static mut DEBUG_TRACE_SWITCH : bool = false;
 static mut MISSING_PROTOCOLS: Lazy<HashSet<Uuid>> = Lazy::new(|| {
     HashSet::new()
 });
+
+
+static mut SMM_MIGHT_VUL : bool = false;
+
+pub fn reset_smm_might_vul() {
+    unsafe {
+        SMM_MIGHT_VUL = false;
+    }
+}
+pub fn smm_might_vul() -> bool {
+    unsafe {
+        SMM_MIGHT_VUL
+    }
+}
 
 pub fn enable_debug_trace() {
     unsafe {
@@ -396,25 +413,14 @@ pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , o
         if IN_FUZZ == false {
             return;
         }
-        if addr < 0x10000000 {  
+        if addr < UEFI_RAM_END {  
             if !(
                 addr >= HOB_ADDR && addr < (HOB_ADDR + 2) 
                 || addr >= ( HOB_ADDR + 8 ) && addr < (HOB_ADDR + HOB_SIZE) 
                 || addr >= DXE_BUFFER_ADDR && addr < (DXE_BUFFER_ADDR + DXE_BUFFER_SIZE)
             ) {
                 return;
-            }
-                
-            // if  addr < HOB_ADDR  || addr >= (HOB_ADDR + HOB_SIZE) {  // hob must be fuzzed
-            //     return;
-            // }
-            // if addr >= HOB_ADDR + 2 && addr < HOB_ADDR + 8 { // HOB length not to mutate
-            //     return;
-            // }
-        } else {  // higher than 0xe0000000, might be fuzzed
-            // if unsafe {!MEM_SHOULD_FUZZ_SWITCH} {
-            //     return;
-            // }     
+            }  
         }
     }
     pre_memrw_common(pc, addr, size, out_addr, rw, val, fuzz_input, cpu, false);
@@ -426,11 +432,16 @@ pub fn pre_memrw_smm_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , ou
             return;
         }
     }
-    if addr >= 0x4800000 && addr < 0x8000000 { // inside sram
+    if addr >= SMRAM_START && addr < SMRAM_END { // inside sram
         return;
     }
-    if addr >= unsafe {COMMBUF_ADDR} && addr < unsafe {COMMBUF_ADDR + COMMBUF_SIZE} {  //outside comm buffer
+    if addr >= unsafe {COMMBUF_ADDR} && addr < unsafe {COMMBUF_ADDR + COMMBUF_ACTUAL_SIZE} {  //outside comm buffer
         return;
+    }
+    if addr > UEFI_RAM_END && rw == 1 {
+        unsafe {
+            SMM_MIGHT_VUL = true;
+        }
     }
     pre_memrw_common(pc, addr, size, out_addr, rw, val, fuzz_input, cpu, false);
 }
@@ -648,7 +659,10 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 match fuzz_input.get_commbuf_fuzz_data(smi_index, smi_invoke_times) {
                     Ok((fuzz_input_ptr,  claimed_len, actual_len)) => { 
                         let written_len = min(unsafe {COMMBUF_SIZE} as usize, actual_len);
-                        unsafe { COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, written_len); }
+                        unsafe { 
+                            COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, written_len); 
+                            COMMBUF_ACTUAL_SIZE = written_len as u64;
+                        }
                         ret = claimed_len as u64;
                     },
                     Err(io_err) => {    
@@ -658,7 +672,10 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                 match fuzz_input.get_commbuf_fuzz_data(smi_index, smi_invoke_times) {
                                     Ok((fuzz_input_ptr, claimed_len, actual_len)) => { 
                                         let written_len = min(unsafe {COMMBUF_SIZE} as usize, actual_len);
-                                        unsafe { COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, written_len); }
+                                        unsafe { 
+                                            COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, written_len); 
+                                            COMMBUF_ACTUAL_SIZE = written_len as u64;
+                                        }
                                         ret = claimed_len as u64;
                                     },
                                     _ => {    
@@ -907,6 +924,10 @@ pub fn set_num_timeout_bbl(bbl : u64) {
 
 
 pub fn bbl_common(cpu : CPU) {
+    let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
+    if pc > UEFI_RAM_END {
+        cpu.exit_crash();
+    }
     unsafe {
         match NEXT_EXIT {
             Some(SmmQemuExit::StreamNotFound) => {
@@ -921,7 +942,6 @@ pub fn bbl_common(cpu : CPU) {
             }
         } 
     }
-
     if get_exec_count() > unsafe { NUM_TIMEOUT_BBL } {
         cpu.exit_timeout();
     }
@@ -932,7 +952,6 @@ pub fn bbl_debug(cpu : CPU) {
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
     if unsafe {DEBUG_TRACE_SWITCH == true && IN_SMI == true}
     {
-        
         let rax : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
         let rbx : GuestReg = cpu.read_reg(Regs::Rbx).unwrap();
         let rcx : GuestReg = cpu.read_reg(Regs::Rcx).unwrap();
@@ -942,6 +961,9 @@ pub fn bbl_debug(cpu : CPU) {
         info!("bbl-> {} pc:{pc:#x} rax:{rax:#x} rbx:{rbx:#x} rcx:{rcx:#x} rdx:{rdx:#x} rsi:{rsi:#x} rdi:{rdi:#x}",get_exec_count());
     }
     bbl_exec_cov_record_common(pc);
+    if pc > UEFI_RAM_END {
+        cpu.exit_crash();
+    }
     unsafe {
         match NEXT_EXIT {
             Some(SmmQemuExit::StreamNotFound) => {

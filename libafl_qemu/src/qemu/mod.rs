@@ -25,7 +25,7 @@ use libafl_qemu_sys::{
     libafl_qemu_cpu_index, libafl_qemu_current_cpu, libafl_qemu_gdb_reply, libafl_qemu_get_cpu,
     libafl_qemu_num_cpus, libafl_qemu_num_regs, libafl_qemu_read_reg,libafl_get_first_cpu,libafl_paddr2host,
     libafl_qemu_remove_breakpoint, libafl_qemu_set_breakpoint,libafl_qemu_flush_tb,libafl_qemu_get_infuzz,libafl_qemu_set_infuzz,
-    libafl_qemu_exit_timeout,libafl_qemu_exit_stream_notfound,libafl_qemu_exit_stream_outof,libafl_qemu_in_smm_mode,libafl_qemu_cpu_stopped,
+    libafl_qemu_exit_timeout,libafl_qemu_exit_stream_notfound,libafl_qemu_exit_stream_outof,libafl_qemu_exit_crash,libafl_qemu_in_smm_mode,libafl_qemu_cpu_stopped,
     libafl_qemu_write_reg, CPUArchState, CPUStatePtr, FatPtr, GuestAddr, GuestPhysAddr, GuestUsize,
     GuestVirtAddr,
 };
@@ -65,6 +65,7 @@ pub enum QemuExitReason {
     Timeout,
     StreamNotFound,
     StreamOutof,
+    Crash,
 }
 
 #[derive(Debug, Clone)]
@@ -244,6 +245,7 @@ impl Display for QemuExitReason {
             QemuExitReason::Timeout => write!(f, "Timeout"),
             QemuExitReason::StreamNotFound => write!(f, "StreamNotFound"),
             QemuExitReason::StreamOutof => write!(f, "StreamOutof"),
+            QemuExitReason::Crash => write!(f, "Crash"),
         }
     }
 }
@@ -339,6 +341,11 @@ impl CPU {
     pub fn exit_stream_outof(&self) {
         unsafe {
             libafl_qemu_exit_stream_outof(self.ptr);
+        }
+    }
+    pub fn exit_crash(&self) {
+        unsafe {
+            libafl_qemu_exit_crash(self.ptr);
         }
     }
     pub fn smm_mode(&self) -> bool {
@@ -706,6 +713,7 @@ impl Qemu {
                 libafl_qemu_sys::libafl_exit_reason_kind_TIMEOUT => QemuExitReason::Timeout,
                 libafl_qemu_sys::libafl_exit_reason_kind_STREAM_NOTFOUND => QemuExitReason::StreamNotFound,
                 libafl_qemu_sys::libafl_exit_reason_kind_STREAM_OUTOF => QemuExitReason::StreamOutof,
+                libafl_qemu_sys::libafl_exit_reason_kind_CRASH => QemuExitReason::Crash,
                 _ => return Err(QemuExitError::UnknownKind),
             })
         }

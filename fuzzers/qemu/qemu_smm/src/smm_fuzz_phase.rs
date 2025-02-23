@@ -140,7 +140,6 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         let mut inputs = StreamInputs::from_multiinput(input);
         unsafe {  
             GLOB_INPUT = (&mut inputs) as *mut StreamInputs;
-            IN_SMI = false;
         }
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
@@ -197,6 +196,13 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
                 unsafe {STREAM_OVER_TIMES += 1;}
                 exit_code = ExitKind::Ok;
             }
+            else if let QemuExitReason::Crash = qemu_exit_reason {
+                unsafe {
+                    CRASH_TIMES += 1;
+                    LAST_EXIT_CRASH = true;
+                }
+                exit_code = ExitKind::Crash;
+            }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 exit_code = ExitKind::Ok;
             }
@@ -216,8 +222,9 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
             exit_elegantly();
             exit_code = ExitKind::Ok;
         }
-        
-            
+        if smm_might_vul() {
+            return ExitKind::Crash;
+        }    
         exit_code
     };
     let mut edges_observer = unsafe {
@@ -383,7 +390,6 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
         let mut inputs = StreamInputs::from_multiinput(input);
         unsafe {  
             GLOB_INPUT = (&mut inputs) as *mut StreamInputs;
-            IN_SMI = false;
         }
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
@@ -437,6 +443,14 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
                 exit_code = ExitKind::Ok;
                 print_exit_addr_info("stream outof", pc, 0);
             }
+            else if let QemuExitReason::Crash = qemu_exit_reason {
+                unsafe {
+                    CRASH_TIMES += 1;
+                    LAST_EXIT_CRASH = true;
+                }
+                exit_code = ExitKind::Crash;
+                print_exit_addr_info("crash", arg1, arg2);
+            }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 error!("ctrl-C");
                 exit_elegantly();
@@ -458,7 +472,9 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
             exit_elegantly();
             exit_code = ExitKind::Ok;
         }
-        
+        if smm_might_vul() {
+            return ExitKind::Crash;
+        } 
             
         exit_code
     };
