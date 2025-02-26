@@ -924,10 +924,6 @@ pub fn set_num_timeout_bbl(bbl : u64) {
 
 
 pub fn bbl_common(cpu : CPU) {
-    let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
-    if pc > UEFI_RAM_END {
-        cpu.exit_crash();
-    }
     unsafe {
         match NEXT_EXIT {
             Some(SmmQemuExit::StreamNotFound) => {
@@ -948,6 +944,19 @@ pub fn bbl_common(cpu : CPU) {
     set_exec_count(get_exec_count() + 1);
 }
 
+pub fn bbl_translate_init_fuzz_phase(cpu : CPU, pc : u64) {
+    if pc > UEFI_RAM_END {
+        cpu.exit_crash();
+    }
+}
+pub fn bbl_translate_smm_fuzz_phase(cpu : CPU, pc : u64) {
+    if unsafe {IN_SMI} {
+        if pc > SMRAM_END || pc < SMRAM_START {
+            cpu.exit_crash();
+        }
+    }
+    
+}
 pub fn bbl_debug(cpu : CPU) {
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
     if unsafe {DEBUG_TRACE_SWITCH == true && IN_SMI == true}
@@ -961,9 +970,6 @@ pub fn bbl_debug(cpu : CPU) {
         info!("bbl-> {} pc:{pc:#x} rax:{rax:#x} rbx:{rbx:#x} rcx:{rcx:#x} rdx:{rdx:#x} rsi:{rsi:#x} rdi:{rdi:#x}",get_exec_count());
     }
     bbl_exec_cov_record_common(pc);
-    if pc > UEFI_RAM_END {
-        cpu.exit_crash();
-    }
     unsafe {
         match NEXT_EXIT {
             Some(SmmQemuExit::StreamNotFound) => {

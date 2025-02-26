@@ -45,22 +45,22 @@ pub enum StreamInfo {
 
 impl StreamInfo {
     fn new_io_stream(pc : u64, addr : u64) -> Self {
-        StreamInfo::IoStream(((pc as u128) << 64) | (addr as u128) | IO_STREAM_MASK, 32, 128, 1)
+        StreamInfo::IoStream(((pc as u128) << 64) | (addr as u128) | IO_STREAM_MASK, 256, 512, 1)
     }
     fn new_dram_stream() -> Self {
-        StreamInfo::DramStream(DRAM_STREAM_MASK, 256, 1024, 3)
+        StreamInfo::DramStream(DRAM_STREAM_MASK, 512, 1024, 3)
     }
     fn new_comm_buf_stream(index : u64, times : u64) -> Self {
-        StreamInfo::CommBufStream(COMMBUF_STREAM_MASK | ((index as u128) << 32) | (times as u128), 128, 256, 5)
+        StreamInfo::CommBufStream(COMMBUF_STREAM_MASK | ((index as u128) << 32) | (times as u128), 512, 1024, 5)
     }
     fn new_msr_stream() -> Self {
-        StreamInfo::MsrStream(MSR_STREAM_MASK, 64, 256, 1)
+        StreamInfo::MsrStream(MSR_STREAM_MASK, 256, 512, 1)
     }
     fn new_stream_seq_stream() -> Self {
         StreamInfo::StreamSeqStream(STREAMSEQ_STREAM_MASK, 4, 8, 1)
     }
     fn new_pcd_stream() -> Self {
-        StreamInfo::PcdStream(PCD_STREAM_MASK, 16, 32, 1)
+        StreamInfo::PcdStream(PCD_STREAM_MASK, 32, 64, 1)
     }
     fn new_smi_group_index_stream() -> Self {
         StreamInfo::SmiGroupIndexStream(SMI_GROUP_INDEX_MASK, 1, 1, 1)

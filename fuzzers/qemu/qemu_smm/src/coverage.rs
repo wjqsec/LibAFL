@@ -80,3 +80,12 @@ pub fn find_module_by_addr(addr : u64) -> (Option<Uuid>, u64) {
     }
     return (None, addr);
 }
+
+pub fn get_readable_addr(addr : u64) -> String {
+    let (module, offset) = find_module_by_addr(addr);
+    if let Some(module) = module {
+        format!("{}:{:#x}",module.to_string(), offset)
+    } else {
+        format!("{}",addr)
+    }
+}

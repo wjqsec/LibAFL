@@ -76,8 +76,15 @@ static mut NOTFOUND_TIMES : u64 = 0;
 
 static mut LAST_EXIT_CRASH : bool = false;
 
-const INIT_FUZZ_TIMEOUT_BBL : u64 = 500000;
-const INIT_FUZZ_TIMEOUT_MINUTE : u64 = 3 * 60;
+const INIT_FUZZ_TIMEOUT_BBL : u64 = 700000;
+static mut INIT_FUZZ_TIMEOUT_TIME : u64 = 5 * 60;
+
+pub fn set_init_fuzz_timeout_time(sec : u64) {
+    unsafe {
+        INIT_FUZZ_TIMEOUT_TIME = sec;
+    }
+}
+
 fn gen_init_random_seed(dir : &PathBuf) {
     let mut initial_input = MultipartInput::<BytesInput>::new();
     initial_input.add_part(0 as u128, BytesInput::new(vec![]),0x10,0);
@@ -86,7 +93,6 @@ fn gen_init_random_seed(dir : &PathBuf) {
     init_seed_path.push(PathBuf::from("init.bin"));
     initial_input.to_file(init_seed_path).unwrap();
 }
-
 
 fn try_run_without_fuzz(qemu : Qemu) -> SnapshotKind {
     let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 30000000,false, false);
@@ -279,7 +285,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
 
     if state.must_load_initial_inputs() {
         state
-            .load_initial_inputs(&mut fuzzer, &mut executor, &mut mgr, &[seed_dirs.clone()])
+            .load_initial_inputs_forced(&mut fuzzer, &mut executor, &mut mgr, &[seed_dirs.clone()])
             .unwrap_or_else(|_| {
                 error!("Failed to load initial corpus at {:?}", &seed_dirs);
                 exit_elegantly();
@@ -305,7 +311,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         if ctrlc_pressed() {
             exit_elegantly();
         }
-        if (libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > INIT_FUZZ_TIMEOUT_MINUTE ) || !missing_smm_protocols_empty() {
+        if libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > unsafe { INIT_FUZZ_TIMEOUT_TIME } {
             skip();
             let dummy_testcase = state.corpus().get(state.corpus().last().unwrap()).unwrap().clone().take().clone().input().clone().unwrap();
             fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &dummy_testcase);

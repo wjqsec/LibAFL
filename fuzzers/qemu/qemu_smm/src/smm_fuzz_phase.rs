@@ -285,7 +285,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
 
     if state.must_load_initial_inputs() {
         state
-            .load_initial_inputs(&mut fuzzer, &mut executor, &mut mgr, &[seed_dirs.clone()])
+            .load_initial_inputs_forced(&mut fuzzer, &mut executor, &mut mgr, &[seed_dirs.clone()])
             .unwrap_or_else(|_| {
                 error!("Failed to load initial corpus at {:?}", &seed_dirs);
                 exit_elegantly();
@@ -365,14 +365,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
 
 } 
 
-fn print_exit_addr_info(reason : &str, addr : u64, sp : u64) {
-    let (module, offset) = find_module_by_addr(addr);
-    if let Some(module) = module {
-        info!("exit {} pc: {}:{:#x} sp: {:#x}",reason, module.to_string(), offset, sp);
-    } else {
-        info!("exit {} pc: {:#x} sp: {:#x}",reason, offset, sp);
-    }
-}
+
 
 pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (), StdState<MultipartInput<BytesInput>, InMemoryCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, InMemoryCorpus<MultipartInput<BytesInput>>>>) -> Vec<(u128, usize)>
 {
@@ -404,7 +397,7 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
                         LIBAFL_QEMU_END_CRASH => {
                             unsafe {CRASH_TIMES += 1;}
                             exit_code = ExitKind::Crash;
-                            print_exit_addr_info("crash", arg1, arg2);
+                            info!("exit crash pc:{} sp:{:#x}",get_readable_addr(arg1), arg2);
                         },
                         LIBAFL_QEMU_END_SMM_FUZZ_END => {
                             unsafe {END_TIMES += 1;}
@@ -432,16 +425,16 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
             else if let QemuExitReason::Timeout = qemu_exit_reason {
                 unsafe {TIMEOUT_TIMES += 1;}
                 exit_code = ExitKind::Timeout;
-                print_exit_addr_info("timeout", pc, 0);
+                info!("exit timeout pc:{} sp:{:#x}",get_readable_addr(pc), 0);
             }
             else if let QemuExitReason::StreamNotFound = qemu_exit_reason {
                 exit_code = ExitKind::Ok;
-                print_exit_addr_info("stream not found", pc, 0);
+                info!("exit stream not found pc:{} sp:{:#x}",get_readable_addr(pc), 0);
             }
             else if let QemuExitReason::StreamOutof = qemu_exit_reason {
                 unsafe {STREAM_OVER_TIMES += 1;}
                 exit_code = ExitKind::Ok;
-                print_exit_addr_info("stream outof", pc, 0);
+                info!("exit stream over pc:{} sp:{:#x}",get_readable_addr(pc), 0);
             }
             else if let QemuExitReason::Crash = qemu_exit_reason {
                 unsafe {
@@ -449,7 +442,7 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
                     LAST_EXIT_CRASH = true;
                 }
                 exit_code = ExitKind::Crash;
-                print_exit_addr_info("crash", arg1, arg2);
+                info!("exit callout pc:{} sp:{:#x}",get_readable_addr(pc), 0);
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 error!("ctrl-C");
