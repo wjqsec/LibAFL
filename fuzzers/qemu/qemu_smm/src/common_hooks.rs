@@ -955,7 +955,6 @@ pub fn bbl_translate_smm_fuzz_phase(cpu : CPU, pc : u64) {
             cpu.exit_crash();
         }
     }
-    
 }
 pub fn bbl_debug(cpu : CPU) {
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
