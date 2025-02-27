@@ -101,6 +101,9 @@ enum SmmCommand {
 
         #[arg(long, value_parser = parse_duration)]
         init_phase_timeout_time: Option<Duration>,
+
+        #[arg(short, long)]
+        tag: Option<String>,
     },
     Replay {
         #[arg(short, long)]
@@ -110,6 +113,9 @@ enum SmmCommand {
         debug_trace: bool,
     },
     Coverage {
+        #[arg(short, long)]
+        tag: Option<String>,
+
         #[arg(short, long)]
         cov_module: Option<String>,
 
@@ -143,29 +149,14 @@ fn main() {
         fs::create_dir_all(project_path.clone()).unwrap();
     }
 
-    let seed_path = project_path.join("seed");
-    if !seed_path.exists() {
-        fs::create_dir_all(seed_path.clone()).unwrap();
-    }
-
-    let corpus_path = project_path.join("corpus");
-    if !corpus_path.exists() {
-        fs::create_dir_all(corpus_path.clone()).unwrap();
-    }
-
-    let crash_path = project_path.join("crash");
-    if !crash_path.exists() {
-        fs::create_dir_all(crash_path.clone()).unwrap();
-    }
-
     let snapshot_path = project_path.join("smi_fuzz_vm_snapshot.bin");
     let ovmf_code_copy = project_path.join("OVMF_CODE.fd");
     let ovmf_var_copy = project_path.join("OVMF_VARS.fd");
-    let log_file = project_path.join("log.txt");
+    
 
 
     match args.cmd {
-        SmmCommand::Fuzz { ovmf_code, ovmf_var, use_snapshot, fuzz_time , init_phase_timeout_time} => {
+        SmmCommand::Fuzz { ovmf_code, ovmf_var, use_snapshot, fuzz_time , init_phase_timeout_time, tag} => {
             if let Some(ovmf_code) = ovmf_code {
                 fs::copy(ovmf_code, ovmf_code_copy.clone()).unwrap();
             }
@@ -179,6 +170,25 @@ fn main() {
                 error!("ovmf files not found");
                 exit_elegantly();
             }
+            let mut fuzz_tag = String::from_str("test_fuzz").unwrap();
+            if let Some(tag) = tag {
+                fuzz_tag = tag;
+            }
+            let seed_path = project_path.join(fuzz_tag.clone()).join("seed");
+            if !seed_path.exists() {
+                fs::create_dir_all(seed_path.clone()).unwrap();
+            }
+        
+            let corpus_path = project_path.join(fuzz_tag.clone()).join("corpus");
+            if !corpus_path.exists() {
+                fs::create_dir_all(corpus_path.clone()).unwrap();
+            }
+        
+            let crash_path = project_path.join(fuzz_tag.clone()).join("crash");
+            if !crash_path.exists() {
+                fs::create_dir_all(crash_path.clone()).unwrap();
+            }
+            let log_file = project_path.join(fuzz_tag.clone()).join("log.txt");
             fuzz((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), (&seed_path, &corpus_path, &crash_path), &snapshot_path, fuzz_time, &log_file, use_snapshot);
         },
         SmmCommand::Replay { inputs, debug_trace } => {
@@ -189,16 +199,25 @@ fn main() {
             if debug_trace == true {
                 enable_debug_trace();
             }
-            run((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), &corpus_path,PathBuf::from_str(inputs.clone().as_str()).unwrap(), &snapshot_path, &log_file);
+            run((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()),PathBuf::from_str(inputs.clone().as_str()).unwrap(), &snapshot_path, &PathBuf::new());
         },
-        SmmCommand::Coverage { cov_module, output } => {
+        SmmCommand::Coverage {tag, cov_module, output } => {
+            let mut fuzz_tag = String::from_str("test_fuzz").unwrap();
+            if let Some(tag) = tag {
+                fuzz_tag = tag;
+            }
+            let corpus_path = project_path.join(fuzz_tag).join("corpus");
+            if !corpus_path.exists() {
+                error!("corpus not found, check your tag");
+                exit_elegantly();
+            }
             if let Some(cov_module) = cov_module {
                 parse_cov_module_file(&PathBuf::from_str(cov_module.as_str()).unwrap());
             }
-            coverage((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), &corpus_path, &snapshot_path, &log_file, output);  
+            coverage((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), &corpus_path, &snapshot_path, &PathBuf::new(), output);  
         },
         SmmCommand::Report { } => {
-            report((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), &snapshot_path, &log_file);
+            report((ovmf_code_copy.to_string_lossy().to_string(), ovmf_var_copy.to_string_lossy().to_string()), &snapshot_path, &PathBuf::new());
         }
 
     }
@@ -442,7 +461,7 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
     exit_elegantly();
 }
 
-fn run(ovmf_file_path : (String, String), corpus_path : &PathBuf, run_corpus : PathBuf, snapshot_bin : &PathBuf, log_file : &PathBuf) {
+fn run(ovmf_file_path : (String, String), run_corpus : PathBuf, snapshot_bin : &PathBuf, log_file : &PathBuf) {
 
     if !snapshot_bin.exists() {
         error!("snapshot not found, unable to replay");

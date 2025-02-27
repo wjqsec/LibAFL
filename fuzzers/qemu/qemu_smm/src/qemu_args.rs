@@ -7,8 +7,7 @@ pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String, log
 {
     let project_dir = env!("CARGO_MANIFEST_DIR");
     let mut qemu_firmware_dir = Path::new(project_dir).join("qemu_firmware");
-    
-    vec![
+    let mut ret = vec![
         "qemu-system-x86_64".to_string(),
         "-machine".to_string(),
         "q35,smm=on,accel=tcg".to_string(),
@@ -18,8 +17,6 @@ pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String, log
         format!("if=pflash,format=raw,unit=0,file={},readonly=on",ovmf_code_path).to_string(),
         "-drive".to_string(),
         format!("if=pflash,format=raw,unit=1,file={}",ovmf_var_path).to_string(),
-        "-debugcon".to_string(),
-        format!("file:{}",log).to_string(),
         "-global".to_string(),
         "isa-debugcon.iobase=0x402".to_string(),
         "-L".to_string(),
@@ -28,9 +25,13 @@ pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String, log
         "null".to_string(),
         "-global".to_string(),
         "mch.extended-tseg-mbytes=56".to_string(),
-        // "-m".to_string(),
-        // "256M".to_string(),
-    ]
+    ];
+    if !log.is_empty() {
+        ret.push("-debugcon".to_string());
+        ret.push(format!("file:{}",log).to_string());
+    }
+    ret
+
 }
 pub fn get_snapshot_dev_filter_list() -> Vec<String>    
 {

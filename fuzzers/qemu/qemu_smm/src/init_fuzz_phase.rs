@@ -95,9 +95,9 @@ fn gen_init_random_seed(dir : &PathBuf) {
 }
 
 fn try_run_without_fuzz(qemu : Qemu) -> SnapshotKind {
-    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 10000000,false, false);
+    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 80000000,false, false);
     if cmd == LIBAFL_QEMU_COMMAND_END && sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_END {
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 10000000,false, false);
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 80000000,false, false);
         if cmd == LIBAFL_QEMU_COMMAND_END {
             if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_START {
                 return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
