@@ -304,7 +304,7 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
         let mut block_id = emulator.modules_mut().blocks(
             Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc: u64| -> Option<u64> {
                 bbl_translate_smm_fuzz_phase(modules.qemu().first_cpu().unwrap(), pc); 
-                None
+                Some(pc)
             })),
         Hook::Empty, 
         Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
@@ -337,7 +337,7 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
     let mut block_id = emulator.modules_mut().blocks(
         Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc: u64| -> Option<u64> {
             bbl_translate_init_fuzz_phase(modules.qemu().first_cpu().unwrap(), pc); 
-            None
+            Some(pc)
         })),
         Hook::Empty, 
         Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
@@ -410,7 +410,7 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
     let mut block_id = emulator.modules_mut().blocks(
         Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc: u64| -> Option<u64> {
             bbl_translate_smm_fuzz_phase(modules.qemu().first_cpu().unwrap(), pc); 
-            None
+            Some(pc)
         })),
         Hook::Empty, 
         Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
@@ -482,7 +482,7 @@ fn run(ovmf_file_path : (String, String), corpus_path : &PathBuf, run_corpus : P
     let mut block_id = emulator.modules_mut().blocks(
         Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc: u64| -> Option<u64> {
             bbl_translate_smm_fuzz_phase(modules.qemu().first_cpu().unwrap(), pc); 
-            None
+            Some(pc)
         })),
         Hook::Empty, 
         Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
@@ -558,7 +558,7 @@ fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_
     let mut block_id = emulator.modules_mut().blocks(
         Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc: u64| -> Option<u64> {
             bbl_translate_init_fuzz_phase(modules.qemu().first_cpu().unwrap(), pc); 
-            None
+            Some(pc)
         })),
         Hook::Empty, 
         Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
@@ -635,7 +635,7 @@ fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_
     let mut block_id = emulator.modules_mut().blocks(
         Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc: u64| -> Option<u64> {
             bbl_translate_smm_fuzz_phase(modules.qemu().first_cpu().unwrap(), pc); 
-            None
+            Some(pc)
         })),
         Hook::Empty, 
         Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {

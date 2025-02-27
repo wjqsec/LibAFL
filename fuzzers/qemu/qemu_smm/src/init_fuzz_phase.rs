@@ -76,8 +76,8 @@ static mut NOTFOUND_TIMES : u64 = 0;
 
 static mut LAST_EXIT_CRASH : bool = false;
 
-const INIT_FUZZ_TIMEOUT_BBL : u64 = 300000;
-static mut INIT_FUZZ_TIMEOUT_TIME : u64 = 5 * 60;
+const INIT_FUZZ_TIMEOUT_BBL : u64 = 500000;
+static mut INIT_FUZZ_TIMEOUT_TIME : u64 = 2 * 60;
 
 pub fn set_init_fuzz_timeout_time(sec : u64) {
     unsafe {
@@ -95,9 +95,9 @@ fn gen_init_random_seed(dir : &PathBuf) {
 }
 
 fn try_run_without_fuzz(qemu : Qemu) -> SnapshotKind {
-    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 3000000,false, false);
+    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 10000000,false, false);
     if cmd == LIBAFL_QEMU_COMMAND_END && sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_END {
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 100000000,false, false);
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 10000000,false, false);
         if cmd == LIBAFL_QEMU_COMMAND_END {
             if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_START {
                 return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
