@@ -168,7 +168,7 @@ fn main() {
             }
             if !ovmf_code_copy.exists() || ! ovmf_var_copy.exists() {
                 error!("ovmf files not found");
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             }
             let mut fuzz_tag = String::from_str("test_fuzz").unwrap();
             if let Some(tag) = tag {
@@ -194,7 +194,7 @@ fn main() {
         SmmCommand::Replay { inputs, debug_trace } => {
             if !ovmf_code_copy.exists() || !ovmf_var_copy.exists() {
                 error!("ovmf files not found");
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             }
             if debug_trace == true {
                 enable_debug_trace();
@@ -209,7 +209,7 @@ fn main() {
             let corpus_path = project_path.join(fuzz_tag).join("corpus");
             if !corpus_path.exists() {
                 error!("corpus not found, check your tag");
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             }
             if let Some(cov_module) = cov_module {
                 parse_cov_module_file(&PathBuf::from_str(cov_module.as_str()).unwrap());
@@ -313,7 +313,7 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
     }
     if let SnapshotKind::None = snapshot {
         error!("first breakpoint hit strange place");
-        exit_elegantly();
+        exit_elegantly(ExitProcessType::Error);
     }
     
 
@@ -349,7 +349,7 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
         })));
         let (seed_dirs, corpus_dir, crash_dir) = setup_smi_fuzz_phase_dirs(seed_path, corpus_path, crash_path);
         smm_phase_fuzz(seed_dirs, corpus_dir, crash_dir, &mut emulator, fuzz_time);
-        exit_elegantly();
+        exit_elegantly(ExitProcessType::Ok);
     }
 
 
@@ -393,11 +393,11 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
         match snapshot {
             SnapshotKind::None => {
                 error!("got None"); 
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             },
             SnapshotKind::StartOfUefiSnap(_) => { 
                 error!("got StartOfUefi"); 
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             },
             SnapshotKind::StartOfSmmInitSnap(snap) => {
                 let (seed_dirs, corpus_dir, crash_dir) = setup_init_phase_dirs(module_index, seed_path, corpus_path, crash_path);
@@ -407,14 +407,14 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
             },
             SnapshotKind::EndOfSmmInitSnap(_) => { 
                 error!("got EndOfSmmInitSnap"); 
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             },
             SnapshotKind::StartOfSmmModuleSnap(snap) => { 
                 break;
             },
             SnapshotKind::StartOfSmmFuzzSnap(_) => { 
                 error!("got StartOfSmmFuzzSnap"); 
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             },
         };
     }
@@ -458,14 +458,14 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
 
     let (seed_dirs, corpus_dir, crash_dir) = setup_smi_fuzz_phase_dirs(seed_path, corpus_path, crash_path);
     smm_phase_fuzz(seed_dirs, corpus_dir, crash_dir, &mut emulator, fuzz_time);
-    exit_elegantly();
+    exit_elegantly(ExitProcessType::Ok);
 }
 
 fn run(ovmf_file_path : (String, String), run_corpus : PathBuf, snapshot_bin : &PathBuf, log_file : &PathBuf) {
 
     if !snapshot_bin.exists() {
         error!("snapshot not found, unable to replay");
-        exit_elegantly();
+        exit_elegantly(ExitProcessType::Error);
     }
     let args: Vec<String> = gen_ovmf_qemu_args(&ovmf_file_path.0, &ovmf_file_path.1, &log_file.to_str().unwrap().to_string());
     let env: Vec<(String, String)> = env::vars().collect();
@@ -528,14 +528,14 @@ fn run(ovmf_file_path : (String, String), run_corpus : PathBuf, snapshot_bin : &
 
     
     smm_phase_run(run_corpus, &mut emulator);
-    exit_elegantly();
+    exit_elegantly(ExitProcessType::Ok);
     
 }
 
 fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_bin : &PathBuf, log_file : &PathBuf, coverage_log : Option<String>) {
     if !snapshot_bin.exists() {
         error!("snapshot not found, unable to replay");
-        exit_elegantly();
+        exit_elegantly(ExitProcessType::Error);
     }
     let mut coverage = Vec::new();
     let args: Vec<String> = gen_ovmf_qemu_args(&ovmf_file_path.0, &ovmf_file_path.1, &log_file.to_str().unwrap().to_string());
@@ -569,7 +569,7 @@ fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_
     }
     if let SnapshotKind::None = snapshot {
         error!("first breakpoint hit strange place");
-        exit_elegantly();
+        exit_elegantly(ExitProcessType::Error);
     }
     
     
@@ -612,11 +612,11 @@ fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_
         match snapshot {
             SnapshotKind::None => {  
                 error!("got None"); 
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             },
             SnapshotKind::StartOfUefiSnap(_) => { 
                 error!("got StartOfUefi"); 
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             },
             SnapshotKind::StartOfSmmInitSnap(snap) => {
                 let corpus_dir = get_init_phase_corpus_dir(module_index, corpus_path);
@@ -628,7 +628,7 @@ fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_
             },
             SnapshotKind::EndOfSmmInitSnap(_) => { 
                 error!("got EndOfSmmInitSnap"); 
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             },
             SnapshotKind::StartOfSmmModuleSnap(snap) => { 
                 snap.delete(qemu);
@@ -636,7 +636,7 @@ fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_
             },
             SnapshotKind::StartOfSmmFuzzSnap(_) => { 
                 error!("got StartOfSmmFuzzSnap"); 
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             },
         };
     }
@@ -689,13 +689,13 @@ fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_
             writeln!(file, "{} {}", time, bbl);
         }
     }
-    exit_elegantly();
+    exit_elegantly(ExitProcessType::Ok);
 }
 
 fn report(ovmf_file_path : (String, String), snapshot_bin : &PathBuf, log_file : &PathBuf) {
     if !snapshot_bin.exists() {
         error!("snapshot not found, unable to replay");
-        exit_elegantly();
+        exit_elegantly(ExitProcessType::Error);
     }
     let args: Vec<String> = gen_ovmf_qemu_args(&ovmf_file_path.0, &ovmf_file_path.1, &log_file.to_str().unwrap().to_string());
     let env: Vec<(String, String)> = env::vars().collect();
@@ -728,7 +728,7 @@ fn report(ovmf_file_path : (String, String), snapshot_bin : &PathBuf, log_file :
 
     FuzzerSnapshot::restore_from_file(qemu, snapshot_bin);
     let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),1000000000,false, false);
-    exit_elegantly();
+    exit_elegantly(ExitProcessType::Ok);
     
     let _ = smm_phase_run(PathBuf::new(), &mut emulator);
 }

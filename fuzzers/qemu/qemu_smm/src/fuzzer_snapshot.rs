@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::common_hooks::*;
-use crate::exit_elegantly;
+use crate::{exit_elegantly, ExitProcessType};
 use libafl_qemu::{FastSnapshotPtr, Qemu};
 use libafl_qemu_sys::QEMUFile;
 use crate::qemu_args::*;
@@ -70,7 +70,7 @@ impl FuzzerSnapshot {
         let ret = qemu.state_save_to_file(&dev_filter,filename.to_str().unwrap());
         if !ret {
             error!("save state to file error\n");
-            exit_elegantly();
+            exit_elegantly(ExitProcessType::Error);
         }
     }
 
@@ -78,7 +78,7 @@ impl FuzzerSnapshot {
         let ret = qemu.state_restore_from_file(filename.to_str().unwrap());
         if !ret {
             error!("restore state from file error\n");
-            exit_elegantly();
+            exit_elegantly(ExitProcessType::Error);
         }
     }
 }

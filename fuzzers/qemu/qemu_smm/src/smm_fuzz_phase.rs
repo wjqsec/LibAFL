@@ -133,7 +133,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         snapshot = s;
     } else {
         error!("run to fuzz point error");
-        exit_elegantly();
+        exit_elegantly(ExitProcessType::Error);
     }
     emulator.modules_mut().first_exec_all();
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
@@ -144,7 +144,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu: CPU = in_qemu.first_cpu().unwrap();
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, SMI_FUZZ_TIMEOUT_BBL,unsafe{LAST_EXIT_CRASH}, true);
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, SMI_FUZZ_TIMEOUT_BBL,false, true);
         unsafe {
             LAST_EXIT_CRASH = false;
         }
@@ -174,14 +174,14 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
                         },
                         _ => {
                             error!("exit error with sync exit arg {:#x}",sync_exit_reason);
-                            exit_elegantly();
+                            exit_elegantly(ExitProcessType::Error);
                             exit_code = ExitKind::Ok;
                         }
                     }
                 }
                 else {
                     error!("exit error with sync exit cmd {:#x}",cmd);
-                    exit_elegantly();
+                    exit_elegantly(ExitProcessType::Error);
                     exit_code = ExitKind::Ok;
                 }
             }
@@ -208,18 +208,18 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
             }
             else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason {
                 error!("Unexpected breakpoint hit");
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
                 exit_code = ExitKind::Ok;
             }
             else {
                 error!("Unexpected exit");
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
                 exit_code = ExitKind::Ok;
             }
         }
         else    {
             error!("Unexpected exit");
-            exit_elegantly();
+            exit_elegantly(ExitProcessType::Error);
             exit_code = ExitKind::Ok;
         }
         if smm_might_vul() {
@@ -288,7 +288,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
             .load_initial_inputs_forced(&mut fuzzer, &mut executor, &mut mgr, &[seed_dirs.clone()])
             .unwrap_or_else(|_| {
                 error!("Failed to load initial corpus at {:?}", &seed_dirs);
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             });
             info!("We imported {} inputs from disk.", state.corpus().count());
     }
@@ -353,7 +353,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
             let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),30000000, true, false);
         }
         if ctrlc_pressed() {
-            exit_elegantly();
+            exit_elegantly(ExitProcessType::Ok);
         }
         if let Some(fuzz_time) = fuzz_time {
             if (current_time().as_secs() - state.start_time().as_secs()) > fuzz_time.as_secs() {
@@ -376,7 +376,7 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
         snapshot = s;
     } else {
         error!("run to fuzz point error");
-        exit_elegantly();
+        exit_elegantly(ExitProcessType::Error);
     }
     emulator.modules_mut().first_exec_all();
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
@@ -411,14 +411,14 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
                         },
                         _ => {
                             error!("exit error with sync exit arg {:#x}",sync_exit_reason);
-                            exit_elegantly();
+                            exit_elegantly(ExitProcessType::Error);
                             exit_code = ExitKind::Ok;
                         }
                     }
                 }
                 else {
                     error!("exit error with sync exit cmd {:#x}",cmd);
-                    exit_elegantly();
+                    exit_elegantly(ExitProcessType::Error);
                     exit_code = ExitKind::Ok;
                 }
             }
@@ -446,23 +446,23 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 error!("ctrl-C");
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
                 exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason {
                 error!("Unexpected breakpoint hit");
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
                 exit_code = ExitKind::Ok;
             }
             else {
                 error!("Unexpected exit");
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
                 exit_code = ExitKind::Ok;
             }
         }
         else    {
             error!("Unexpected exit");
-            exit_elegantly();
+            exit_elegantly(ExitProcessType::Error);
             exit_code = ExitKind::Ok;
         }
         if smm_might_vul() {

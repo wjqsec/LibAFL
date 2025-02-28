@@ -95,9 +95,9 @@ fn gen_init_random_seed(dir : &PathBuf) {
 }
 
 fn try_run_without_fuzz(qemu : Qemu) -> SnapshotKind {
-    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 80000000,false, false);
+    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 500000000,false, false);
     if cmd == LIBAFL_QEMU_COMMAND_END && sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_END {
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 80000000,false, false);
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 500000000,false, false);
         if cmd == LIBAFL_QEMU_COMMAND_END {
             if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_START {
                 return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::from_qemu(qemu));
@@ -107,7 +107,7 @@ fn try_run_without_fuzz(qemu : Qemu) -> SnapshotKind {
             }
         }
         error!("run to next module or smm fuzz error");
-        exit_elegantly();
+        exit_elegantly(ExitProcessType::Error);
     } 
     return SnapshotKind::None;
 }
@@ -150,7 +150,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
         // set_fuzz_mem_switch(fuzz_input);
         
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, INIT_FUZZ_TIMEOUT_BBL,unsafe{LAST_EXIT_CRASH}, true);
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, INIT_FUZZ_TIMEOUT_BBL,false, true);
         unsafe {
             LAST_EXIT_CRASH = false;
         }
@@ -185,13 +185,13 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                         },
                         _ => {
                             error!("exit sync_exit_reason {sync_exit_reason}");
-                            exit_elegantly();
+                            exit_elegantly(ExitProcessType::Error);
                         },
                     }
                 }
                 else {
                     error!("exit cmd {cmd} {pc:#x}");
-                    exit_elegantly();
+                    exit_elegantly(ExitProcessType::Error);
                 }
             }
             else if let QemuExitReason::Timeout = qemu_exit_reason {
@@ -214,20 +214,20 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 error!("Ctrl+C");
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             }
             else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason {
                 error!("exit Breakpoint");
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             }
             else {
                 error!("exit unknown");
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             }
         }
         else    {
             error!("exit 6");
-            exit_elegantly();
+            exit_elegantly(ExitProcessType::Error);
         }
         
             
@@ -288,7 +288,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
             .load_initial_inputs_forced(&mut fuzzer, &mut executor, &mut mgr, &[seed_dirs.clone()])
             .unwrap_or_else(|_| {
                 error!("Failed to load initial corpus at {:?}", &seed_dirs);
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             });
             info!("We imported {} inputs from disk.", state.corpus().count());
     }
@@ -309,7 +309,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
             .unwrap();
         mgr.maybe_report_progress(&mut state, Duration::from_secs(20));
         if ctrlc_pressed() {
-            exit_elegantly();
+            exit_elegantly(ExitProcessType::Ok);
         }
         if libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > unsafe { INIT_FUZZ_TIMEOUT_TIME } {
             skip();
@@ -336,7 +336,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                 }
             }
             error!("fuzz one module over, run to next module error");
-            exit_elegantly();
+            exit_elegantly(ExitProcessType::Error);
         }
     }
     unreachable!();
@@ -366,7 +366,7 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
         let try_snapshot = try_run_without_fuzz(qemu);
         if let SnapshotKind::None = try_snapshot {
             error!("no corpus, but cannot run to init end");
-            exit_elegantly();
+            exit_elegantly(ExitProcessType::Error);
         } else {
             snapshot.delete(qemu);
             return (try_snapshot, Vec::new());
@@ -386,7 +386,7 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
         // set_fuzz_mem_switch(fuzz_input);
 
         
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, INIT_FUZZ_TIMEOUT_BBL,unsafe{LAST_EXIT_CRASH}, true);
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, INIT_FUZZ_TIMEOUT_BBL,false, true);
         unsafe {
             LAST_EXIT_CRASH = false;
         }
@@ -421,13 +421,13 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
                         },
                         _ => {
                             error!("exit sync_exit_reason {sync_exit_reason}");
-                            exit_elegantly();
+                            exit_elegantly(ExitProcessType::Error);
                         },
                     }
                 }
                 else {
                     error!("exit cmd {cmd} {pc:#x}");
-                    exit_elegantly();
+                    exit_elegantly(ExitProcessType::Error);
                 }
             }
             else if let QemuExitReason::Timeout = qemu_exit_reason {
@@ -447,20 +447,20 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 error!("Ctrl+C");
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             }
             else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason {
                 error!("exit Breakpoint");
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             }
             else {
                 error!("exit unknown");
-                exit_elegantly();
+                exit_elegantly(ExitProcessType::Error);
             }
         }
         else    {
             error!("exit 6");
-            exit_elegantly();
+            exit_elegantly(ExitProcessType::Error);
         }
         
             
@@ -551,7 +551,7 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
                 }
             }
             error!("run one module over, run to next module error");
-            exit_elegantly();
+            exit_elegantly(ExitProcessType::Error);
         }
     } else {
         skip();
@@ -570,7 +570,7 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
             }
         }
         error!("cannot skip?????");
-        exit_elegantly();
+        exit_elegantly(ExitProcessType::Error);
     }
     unreachable!();
 

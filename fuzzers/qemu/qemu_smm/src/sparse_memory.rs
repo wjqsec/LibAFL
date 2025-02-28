@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use log::*;
-use crate::exit_elegantly;
+use crate::{exit_elegantly,ExitProcessType};
 
 const NUM_PAGE_BYTES_SHIFT : usize = 8;
 const NUM_PAGE_BYTES : usize = 1 << NUM_PAGE_BYTES_SHIFT;
@@ -160,7 +160,7 @@ impl SparseMemory {
     pub fn init_bytes(&mut self, addr : u64, value : &Vec<u8>) {
         if value.len() > 16 {
             error!("init bytes too much values");
-            exit_elegantly();
+            exit_elegantly(ExitProcessType::Error);
         }
         let mut val_idx = 0;
         for i in 0..16 {

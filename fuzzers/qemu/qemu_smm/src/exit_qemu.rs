@@ -9,13 +9,18 @@ pub enum SmmQemuExit {
     Crash,  
 }
 
+pub enum ExitProcessType {
+    Ok = 0,
+    Error = 1,
+}
+
 static mut CTRLC_PRESSED : bool = false;
 
 pub fn ctrlc_pressed() -> bool {
     unsafe {CTRLC_PRESSED}
 }
 
-pub fn exit_elegantly()
+pub fn exit_elegantly(code : ExitProcessType)
 {
     let status = Command::new("stty")
     .arg("sane")
@@ -28,7 +33,7 @@ pub fn exit_elegantly()
         error!("Failed to reset terminal.");
     }
 
-    exit(0);
+    exit(code as i32);
 }
 
 pub fn setup_ctrlc_handler() {
