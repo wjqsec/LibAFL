@@ -168,7 +168,7 @@ fn main() {
             }
             if !ovmf_code_copy.exists() || ! ovmf_var_copy.exists() {
                 error!("ovmf files not found");
-                exit_elegantly(ExitProcessType::Error);
+                exit_elegantly(ExitProcessType::Ok);
             }
             let mut fuzz_tag = String::from_str("test_fuzz").unwrap();
             if let Some(tag) = tag {
@@ -194,7 +194,7 @@ fn main() {
         SmmCommand::Replay { inputs, debug_trace } => {
             if !ovmf_code_copy.exists() || !ovmf_var_copy.exists() {
                 error!("ovmf files not found");
-                exit_elegantly(ExitProcessType::Error);
+                exit_elegantly(ExitProcessType::Ok);
             }
             if debug_trace == true {
                 enable_debug_trace();
@@ -209,7 +209,7 @@ fn main() {
             let corpus_path = project_path.join(fuzz_tag).join("corpus");
             if !corpus_path.exists() {
                 error!("corpus not found, check your tag");
-                exit_elegantly(ExitProcessType::Error);
+                exit_elegantly(ExitProcessType::Ok);
             }
             if let Some(cov_module) = cov_module {
                 parse_cov_module_file(&PathBuf::from_str(cov_module.as_str()).unwrap());
@@ -313,7 +313,7 @@ fn fuzz(ovmf_file_path : (String, String), (seed_path,corpus_path, crash_path) :
     }
     if let SnapshotKind::None = snapshot {
         error!("first breakpoint hit strange place");
-        exit_elegantly(ExitProcessType::Error);
+        exit_elegantly(ExitProcessType::Ok);
     }
     
 
@@ -465,7 +465,7 @@ fn run(ovmf_file_path : (String, String), run_corpus : PathBuf, snapshot_bin : &
 
     if !snapshot_bin.exists() {
         error!("snapshot not found, unable to replay");
-        exit_elegantly(ExitProcessType::Error);
+        exit_elegantly(ExitProcessType::Ok);
     }
     let args: Vec<String> = gen_ovmf_qemu_args(&ovmf_file_path.0, &ovmf_file_path.1, &log_file.to_str().unwrap().to_string());
     let env: Vec<(String, String)> = env::vars().collect();
@@ -535,7 +535,7 @@ fn run(ovmf_file_path : (String, String), run_corpus : PathBuf, snapshot_bin : &
 fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_bin : &PathBuf, log_file : &PathBuf, coverage_log : Option<String>) {
     if !snapshot_bin.exists() {
         error!("snapshot not found, unable to replay");
-        exit_elegantly(ExitProcessType::Error);
+        exit_elegantly(ExitProcessType::Ok);
     }
     let mut coverage = Vec::new();
     let args: Vec<String> = gen_ovmf_qemu_args(&ovmf_file_path.0, &ovmf_file_path.1, &log_file.to_str().unwrap().to_string());
@@ -695,7 +695,7 @@ fn coverage(ovmf_file_path : (String, String), corpus_path : &PathBuf, snapshot_
 fn report(ovmf_file_path : (String, String), snapshot_bin : &PathBuf, log_file : &PathBuf) {
     if !snapshot_bin.exists() {
         error!("snapshot not found, unable to replay");
-        exit_elegantly(ExitProcessType::Error);
+        exit_elegantly(ExitProcessType::Ok);
     }
     let args: Vec<String> = gen_ovmf_qemu_args(&ovmf_file_path.0, &ovmf_file_path.1, &log_file.to_str().unwrap().to_string());
     let env: Vec<(String, String)> = env::vars().collect();

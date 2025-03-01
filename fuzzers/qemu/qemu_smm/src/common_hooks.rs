@@ -967,7 +967,7 @@ pub fn bbl_debug(cpu : CPU) {
         let rdx : GuestReg = cpu.read_reg(Regs::Rdx).unwrap();
         let rsi : GuestReg = cpu.read_reg(Regs::Rsi).unwrap();
         let rdi : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
-        info!("bbl-> {} pc:{pc:#x} rax:{rax:#x} rbx:{rbx:#x} rcx:{rcx:#x} rdx:{rdx:#x} rsi:{rsi:#x} rdi:{rdi:#x}",get_exec_count());
+        info!("bbl-> {} pc:{} rax:{rax:#x} rbx:{rbx:#x} rcx:{rcx:#x} rdx:{rdx:#x} rsi:{rsi:#x} rdi:{rdi:#x}",get_exec_count(), get_readable_addr(pc));
     }
     bbl_exec_cov_record_common(pc);
     unsafe {
