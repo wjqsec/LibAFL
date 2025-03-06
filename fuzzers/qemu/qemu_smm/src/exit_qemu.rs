@@ -10,7 +10,7 @@ pub enum SmmQemuExit {
 }
 
 pub enum ExitProcessType {
-    Ok = 0,
+    Ok = 10,
     Error = 1,
 }
 

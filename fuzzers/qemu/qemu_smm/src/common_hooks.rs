@@ -446,7 +446,19 @@ pub fn pre_memrw_smm_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , ou
     }
     pre_memrw_common(pc, addr, size, out_addr, rw, val, fuzz_input, cpu, false);
 }
-
+pub fn pre_memrw_smm_fuzz_phase_debug(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
+{
+    let op;
+    if rw == 0 {
+        op = "read";
+    } else {
+        op = "write";
+    }
+    if unsafe {IN_SMI == true} {
+        debug!("pc:{} {} addr:{:#x} value:{:#x}",get_readable_addr(pc), op, addr, val);
+    }
+    pre_memrw_smm_fuzz_phase(pc, addr, size, out_addr, rw, val, fuzz_input, cpu);
+}
 
 fn rdmsr_common(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fuzz_input : &mut StreamInputs)
 {
@@ -959,7 +971,7 @@ pub fn bbl_translate_smm_fuzz_phase(cpu : CPU, pc : u64) {
 }
 pub fn bbl_debug(cpu : CPU) {
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
-    if unsafe {DEBUG_TRACE_SWITCH == true && IN_SMI == true}
+    if unsafe {IN_SMI == true}
     {
         let rax : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
         let rbx : GuestReg = cpu.read_reg(Regs::Rbx).unwrap();
@@ -967,7 +979,7 @@ pub fn bbl_debug(cpu : CPU) {
         let rdx : GuestReg = cpu.read_reg(Regs::Rdx).unwrap();
         let rsi : GuestReg = cpu.read_reg(Regs::Rsi).unwrap();
         let rdi : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
-        info!("bbl-> {} pc:{} rax:{rax:#x} rbx:{rbx:#x} rcx:{rcx:#x} rdx:{rdx:#x} rsi:{rsi:#x} rdi:{rdi:#x}",get_exec_count(), get_readable_addr(pc));
+        debug!("bbl-> {} pc:{} rax:{rax:#x} rbx:{rbx:#x} rcx:{rcx:#x} rdx:{rdx:#x} rsi:{rsi:#x} rdi:{rdi:#x}",get_exec_count(), get_readable_addr(pc));
     }
     bbl_exec_cov_record_common(pc);
     unsafe {

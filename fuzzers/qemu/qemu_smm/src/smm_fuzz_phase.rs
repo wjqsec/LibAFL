@@ -535,6 +535,7 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
             for input in corpus_inputs.iter() {
                 smi_group_info_from_file(&PathBuf::from(input.2.clone()));
                 let input_testcase = MultipartInput::from_file(input.0.clone()).unwrap();
+                info!("exec input {}",input.0.clone());
                 fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input_testcase);
                 info!("bbl {} {}",input.3, num_bbl_covered());
                 ret.push((input.3, num_bbl_covered()));

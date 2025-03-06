@@ -86,6 +86,6 @@ pub fn get_readable_addr(addr : u64) -> String {
     if let Some(module) = module {
         format!("{}:{:#x}",module.to_string(), offset)
     } else {
-        format!("{}",addr)
+        format!("{:#x}",addr)
     }
 }
