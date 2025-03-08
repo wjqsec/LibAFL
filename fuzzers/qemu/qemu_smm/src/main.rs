@@ -478,6 +478,7 @@ fn replay(ovmf_file_path : (String, String), run_corpus : PathBuf, snapshot_bin 
         NopEmulatorExitHandler,
         NopCommandManager)
         .unwrap();
+    setup_ctrlc_handler();
     let cpu = qemu.first_cpu().unwrap();
     
     let backdoor_id = emulator.modules_mut().backdoor(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, addr : GuestAddr| {

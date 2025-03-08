@@ -92,7 +92,7 @@ pub fn wrmsr_common(in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32)
     unsafe {
         let eax_info = *in_eax;
         let edx_info = *in_edx;
-        debug!("wrmsr {in_ecx:#x} {eax_info:#x} {edx_info:#x}");
+        debug!("[wrmsr] {in_ecx:#x} {eax_info:#x} {edx_info:#x}");
     }
 }
 fn cpuid_common(in_eax: u32, out_eax: *mut u32,out_ebx: *mut u32, out_ecx: *mut u32, out_edx: *mut u32, fuzz_input : &mut StreamInputs, cpu : CPU)
@@ -204,7 +204,7 @@ fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut 
         
     };
 
-    debug!("post_io_read {pc:#x} {io_addr:#x} {size:#x} {value:#x}");
+    debug!("[io] post_io_read {pc:#x} {io_addr:#x} {size:#x} {value:#x}");
 
 }
 
@@ -248,7 +248,7 @@ fn pre_io_write_common(base : GuestAddr, offset : GuestAddr,size : usize, data :
         },
     };
     let addr = base + offset;
-    debug!("pre_io_write {pc:#x} {addr:#x} {size:#x} {value:#x}");
+    debug!("[io] pre_io_write {pc:#x} {addr:#x} {size:#x} {value:#x}");
 }
 
 pub fn pre_io_write_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool, cpu : CPU)
@@ -454,8 +454,9 @@ pub fn pre_memrw_smm_fuzz_phase_debug(pc : GuestReg, addr : GuestAddr, size : u6
     } else {
         op = "write";
     }
+    let pc = cpu.read_reg(Regs::Rip).unwrap();
     if unsafe {IN_SMI == true} {
-        debug!("pc:{} {} addr:{:#x} value:{:#x}",get_readable_addr(pc), op, addr, val);
+        debug!("[mem] pc:{} {} addr:{:#x} value:{:#x}",get_readable_addr(pc), op, addr, val);
     }
     pre_memrw_smm_fuzz_phase(pc, addr, size, out_addr, rw, val, fuzz_input, cpu);
 }
@@ -505,7 +506,7 @@ fn rdmsr_common(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fuzz_input : &
     unsafe {
         let eax_info = *out_eax;
         let edx_info = *out_edx;
-        debug!("rdmsr {in_ecx:#x} {eax_info:#x} {edx_info:#x}");
+        debug!("[rdmsr] {in_ecx:#x} {eax_info:#x} {edx_info:#x}");
     }
 }
 pub fn rdmsr_init_fuzz_phase(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fuzz_input : &mut StreamInputs) 
@@ -552,7 +553,6 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
     let arg2 : GuestReg = cpu.read_reg(Regs::Rsi).unwrap();
     let arg3 : GuestReg = cpu.read_reg(Regs::Rdx).unwrap();
     let mut ret : u64 = 0;
-    debug!("backdoor_common {cmd} {arg1:#x} {:?}",get_exec_count());
     match cmd {
         LIBAFL_QEMU_COMMAND_SMM_REPORT_DUMMY_MEM => {
             unsafe {
@@ -561,7 +561,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 let dummy_memory_phy_addr = cpu.get_phys_addr_with_offset(DUMMY_MEMORY_ADDR).unwrap();
                 let dummy_memory_host_addr = cpu.get_host_addr(dummy_memory_phy_addr);
                 DUMMY_MEMORY_HOST_PTR = dummy_memory_host_addr as *mut u64;
-                info!("dummy memory info {:#x} {:#x} {:?}",DUMMY_MEMORY_ADDR,DUMMY_MEMORY_SIZE,DUMMY_MEMORY_HOST_PTR);
+                debug!("[backdoor] dummy memory info {:#x} {:#x} {:?}",DUMMY_MEMORY_ADDR,DUMMY_MEMORY_SIZE,DUMMY_MEMORY_HOST_PTR);
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_SMI_SELECT_INFO => {
@@ -571,7 +571,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 let smi_select_buffer_phy_addr = cpu.get_phys_addr_with_offset(SMI_SELECT_BUFFER_ADDR).unwrap();
                 let smi_select_buffer_host_addr = cpu.get_host_addr(smi_select_buffer_phy_addr);
                 SMI_SELECT_BUFFER_HOST_PTR = smi_select_buffer_host_addr;
-                info!("smi select buffer {:#x} {:#x} {:#x} {:?}",SMI_SELECT_BUFFER_ADDR, SMI_SELECT_BUFFER_SIZE, smi_select_buffer_phy_addr, SMI_SELECT_BUFFER_HOST_PTR);
+                debug!("[backdoor] smi select buffer {:#x} {:#x} {:#x} {:?}",SMI_SELECT_BUFFER_ADDR, SMI_SELECT_BUFFER_SIZE, smi_select_buffer_phy_addr, SMI_SELECT_BUFFER_HOST_PTR);
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_COMMBUF_INFO => {
@@ -581,7 +581,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 let commbuf_phy_addr = cpu.get_phys_addr_with_offset(COMMBUF_ADDR).unwrap();
                 let commbuf_host_addr = cpu.get_host_addr(commbuf_phy_addr);
                 COMMBUF_HOST_PTR = commbuf_host_addr;
-                info!("comm buffer {:#x} {:#x} {:#x} {:?}",COMMBUF_ADDR, COMMBUF_SIZE, commbuf_phy_addr, COMMBUF_HOST_PTR);
+                debug!("[backdoor] comm buffer {:#x} {:#x} {:#x} {:?}",COMMBUF_ADDR, COMMBUF_SIZE, commbuf_phy_addr, COMMBUF_HOST_PTR);
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_SMI_SELECT_FUZZ_DATA => {
@@ -769,11 +769,27 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             unsafe {
                 IN_SMI = true;
             }
+
+            let guid_addr = arg1;
+            let target_addr = arg2;
+            if guid_addr == 0 {
+                debug!("[backdoor] SMI enter root handler {}", get_readable_addr(target_addr));
+            } else {
+                let mut guid_buf : [u8; 16] = [0 ; 16];
+                unsafe {
+                    cpu.read_mem(guid_addr,&mut guid_buf);
+                }
+                let handler_guid = Uuid::from_bytes_le(guid_buf);
+                debug!("[backdoor] SMI enter {} {}", handler_guid.to_string(), get_readable_addr(target_addr));
+            }
+            
+            
         },
         LIBAFL_QEMU_COMMAND_SMM_SMI_EXIT => {
             unsafe {
                 IN_SMI = false;
             }
+            debug!("[backdoor] SMI exit");
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_VARIABLE_FUZZ_DATA => {
             let addr = arg1;
@@ -916,12 +932,12 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             unsafe {
                 DXE_BUFFER_ADDR = arg1;
                 DXE_BUFFER_SIZE = arg2;
-                info!("DXE buffer {:#x} {:#x}",DXE_BUFFER_ADDR, DXE_BUFFER_SIZE);
+                info!("[backdoor] DXE buffer {:#x} {:#x}",DXE_BUFFER_ADDR, DXE_BUFFER_SIZE);
             }
             
         },
         _ => { 
-            error!("backdoor wrong cmd {:}",cmd); 
+            error!("[backdoor] backdoor wrong cmd {:}",cmd); 
             exit_elegantly(ExitProcessType::Error)
         },
     };
@@ -979,7 +995,7 @@ pub fn bbl_debug(cpu : CPU) {
         let rdx : GuestReg = cpu.read_reg(Regs::Rdx).unwrap();
         let rsi : GuestReg = cpu.read_reg(Regs::Rsi).unwrap();
         let rdi : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
-        debug!("bbl-> {} pc:{} rax:{rax:#x} rbx:{rbx:#x} rcx:{rcx:#x} rdx:{rdx:#x} rsi:{rsi:#x} rdi:{rdi:#x}",get_exec_count(), get_readable_addr(pc));
+        debug!("[bbl]-> {} pc:{} rax:{rax:#x} rbx:{rbx:#x} rcx:{rcx:#x} rdx:{rdx:#x} rsi:{rsi:#x} rdi:{rdi:#x}",get_exec_count(), get_readable_addr(pc));
     }
     bbl_exec_cov_record_common(pc);
     unsafe {

@@ -152,7 +152,6 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         if let Ok(qemu_exit_reason) = qemu_exit_reason
         {
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
-                debug!("qemu_run_to_end sync exit {:#x} {:#x} {:#x}",cmd,sync_exit_reason,pc);
                 if cmd == LIBAFL_QEMU_COMMAND_END {
                     match sync_exit_reason {
                         LIBAFL_QEMU_END_CRASH => {
@@ -387,7 +386,7 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu = in_qemu.first_cpu().unwrap();
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, SMI_FUZZ_TIMEOUT_BBL,true, true);
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, SMI_FUZZ_TIMEOUT_BBL,false, true);
         let exit_code;
         if let Ok(qemu_exit_reason) = qemu_exit_reason
         {
@@ -512,6 +511,7 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
                         let file_name = entry.file_name();
                         let file_name_str = file_name.to_string_lossy();
                         if !file_name_str.starts_with('.') {
+                            info!("load {}",file_name_str);
                             let metadata_filename = format!(".{file_name_str}.metadata");
                             let metadata_fullpath = entry.path().parent().unwrap().join(metadata_filename);
 
@@ -522,7 +522,7 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
                     }
                 }
             }
-
+            
             for input in corpus_inputs.iter_mut() {
                 let contents = fs::read_to_string(input.1.clone()).unwrap();
                 let config_json : Value = serde_json::from_str(&contents[..]).unwrap();
@@ -539,9 +539,13 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
                 fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input_testcase);
                 info!("bbl {} {}",input.3, num_bbl_covered());
                 ret.push((input.3, num_bbl_covered()));
+                if ctrlc_pressed() {
+                    exit_elegantly(ExitProcessType::Ok);
+                } 
             }
     } else if input_corpus.is_file() {
         let input = MultipartInput::from_file(input_corpus.clone()).unwrap();
+        info!("exec input {}",input_corpus.clone().to_str().unwrap());
         fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input);
     }     
 
