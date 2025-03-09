@@ -48,8 +48,6 @@ static mut HOB_SIZE : u64 = 0;
 static mut DXE_BUFFER_ADDR : u64 = 0;
 static mut DXE_BUFFER_SIZE : u64 = 0;
 
-static mut DEBUG_TRACE_SWITCH : bool = false;
-
 static mut MISSING_PROTOCOLS: Lazy<HashSet<Uuid>> = Lazy::new(|| {
     HashSet::new()
 });
@@ -65,12 +63,6 @@ pub fn reset_smm_might_vul() {
 pub fn smm_might_vul() -> bool {
     unsafe {
         SMM_MIGHT_VUL
-    }
-}
-
-pub fn enable_debug_trace() {
-    unsafe {
-        DEBUG_TRACE_SWITCH = true;
     }
 }
 

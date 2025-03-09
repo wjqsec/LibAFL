@@ -2,11 +2,31 @@ use std::vec::*;
 use std::string::*;
 use std::ffi::{CString, CStr};
 use std::path::Path;
+use once_cell::sync::Lazy;
+use std::{path::PathBuf, process};
 
-pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String, log : &String) -> Vec<String>
+static mut OVMF_CODE_PATH : Lazy<PathBuf> = Lazy::new(|| {
+    PathBuf::new()
+});
+static mut OVMF_VARS_PATH : Lazy<PathBuf> = Lazy::new(|| {
+    PathBuf::new()
+});
+static mut QEMU_DEBUG_LOG_PATH : Lazy<PathBuf> = Lazy::new(|| {
+    PathBuf::new()
+});
+pub fn set_ovmf_path(ovmf_code_path : &PathBuf, ovmf_var_path : &PathBuf, qemu_debug_log_path : &PathBuf)
+{
+    unsafe {
+        OVMF_CODE_PATH.clone_from(ovmf_code_path);
+        OVMF_VARS_PATH.clone_from(ovmf_var_path);
+        QEMU_DEBUG_LOG_PATH.clone_from(qemu_debug_log_path);
+    }
+}
+
+pub fn gen_ovmf_qemu_args() -> Vec<String>
 {
     let project_dir = env!("CARGO_MANIFEST_DIR");
-    let mut qemu_firmware_dir = Path::new(project_dir).join("qemu_firmware");
+    let qemu_firmware_dir = Path::new(project_dir).join("qemu_firmware");
     let mut ret = vec![
         "qemu-system-x86_64".to_string(),
         "-machine".to_string(),
@@ -14,9 +34,9 @@ pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String, log
         "-global".to_string(),
         "driver=cfi.pflash01,property=secure,value=on".to_string(),
         "-drive".to_string(),
-        format!("if=pflash,format=raw,unit=0,file={},readonly=on",ovmf_code_path).to_string(),
+        format!("if=pflash,format=raw,unit=0,file={},readonly=on",unsafe {OVMF_CODE_PATH.to_string_lossy().to_string()}).to_string(),
         "-drive".to_string(),
-        format!("if=pflash,format=raw,unit=1,file={}",ovmf_var_path).to_string(),
+        format!("if=pflash,format=raw,unit=1,file={}",unsafe {OVMF_VARS_PATH.to_string_lossy().to_string()}).to_string(),
         "-global".to_string(),
         "isa-debugcon.iobase=0x402".to_string(),
         "-L".to_string(),
@@ -26,9 +46,9 @@ pub fn gen_ovmf_qemu_args(ovmf_code_path : &String, ovmf_var_path : &String, log
         "-global".to_string(),
         "mch.extended-tseg-mbytes=56".to_string(),
     ];
-    if !log.is_empty() {
+    if ! unsafe { QEMU_DEBUG_LOG_PATH.to_string_lossy().to_string().is_empty() } {
         ret.push("-debugcon".to_string());
-        ret.push(format!("file:{}",log).to_string());
+        ret.push(format!("file:{}",unsafe {OVMF_VARS_PATH.to_string_lossy().to_string()}).to_string());
     }
     ret
 
