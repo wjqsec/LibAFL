@@ -154,23 +154,27 @@ fn main() {
     let corpus_path = project_path.join(fuzz_tag.clone()).join("corpus");
     let crash_path = project_path.join(fuzz_tag.clone()).join("crash");
     let snapshot_path = project_path.join(fuzz_tag.clone()).join("snapshots");
-    let log_file = project_path.join(fuzz_tag.clone()).join("log.txt");
+    let log_file = project_path.join(fuzz_tag.clone()).join("qemu_log.txt");
     set_ovmf_path(&ovmf_code_copy, &ovmf_var_copy, &log_file);
 
     match args.cmd {
         SmmCommand::Fuzz { ovmf_code, ovmf_var, use_snapshot, fuzz_time , init_phase_timeout_time} => {
-            if !seed_path.exists() {
-                fs::create_dir_all(seed_path.clone()).unwrap();
+            if seed_path.exists() {
+                fs::remove_dir_all(seed_path.clone()).unwrap();
             }
-            if !corpus_path.exists() {
-                fs::create_dir_all(corpus_path.clone()).unwrap();
+            if corpus_path.exists() {
+                fs::remove_dir_all(corpus_path.clone()).unwrap();
             }
-            if !crash_path.exists() {
-                fs::create_dir_all(crash_path.clone()).unwrap();
+            if crash_path.exists() {
+                fs::remove_dir_all(crash_path.clone()).unwrap();
             }
-            if !snapshot_path.exists() {
-                fs::create_dir_all(snapshot_path.clone()).unwrap();
+            if snapshot_path.exists() {
+                fs::remove_dir_all(snapshot_path.clone()).unwrap();
             }
+            fs::create_dir_all(seed_path.clone()).unwrap();
+            fs::create_dir_all(corpus_path.clone()).unwrap();
+            fs::create_dir_all(crash_path.clone()).unwrap();
+            fs::create_dir_all(snapshot_path.clone()).unwrap();
 
             if let Some(ovmf_code) = ovmf_code {
                 fs::copy(ovmf_code, ovmf_code_copy.clone()).unwrap();
@@ -457,7 +461,7 @@ fn replay((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathB
         .unwrap();
     setup_ctrlc_handler();
     let cpu = qemu.first_cpu().unwrap();
-    let (seed_dirs_smi_phase, corpus_dir_smi_phase, crash_dir_smi_phase, snapshot_bin_smi_phase) = setup_smi_fuzz_phase_dirs_for_fuzz(seed_path, corpus_path, crash_path, snapshot_path);
+    let (seed_dirs_smi_phase, corpus_dir_smi_phase, crash_dir_smi_phase, snapshot_bin_smi_phase) = get_smi_fuzz_phase_dirs_for_replay(seed_path, corpus_path, crash_path, snapshot_path);
     if !snapshot_bin_smi_phase.exists() {
         error!("snapshot not found, unable to replay");
         exit_elegantly(ExitProcessType::Ok);
@@ -527,7 +531,7 @@ fn coverage((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &Pat
         NopCommandManager)
         .unwrap();
     let cpu = qemu.first_cpu().unwrap();
-    let (seed_dirs_smi_phase, corpus_dir_smi_phase, crash_dir_smi_phase, snapshot_bin_smi_phase) = setup_smi_fuzz_phase_dirs_for_fuzz(seed_path, corpus_path, crash_path, snapshot_path);
+    let (seed_dirs_smi_phase, corpus_dir_smi_phase, crash_dir_smi_phase, snapshot_bin_smi_phase) = get_smi_fuzz_phase_dirs_for_replay(seed_path, corpus_path, crash_path, snapshot_path);
     if !snapshot_bin_smi_phase.exists() {
         error!("snapshot not found, unable to replay");
         exit_elegantly(ExitProcessType::Ok);
@@ -662,7 +666,7 @@ fn report((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathB
         NopCommandManager)
         .unwrap();
     let cpu = qemu.first_cpu().unwrap();
-    let (seed_dirs_smi_phase, corpus_dir_smi_phase, crash_dir_smi_phase, snapshot_bin_smi_phase) = setup_smi_fuzz_phase_dirs_for_fuzz(seed_path, corpus_path, crash_path, snapshot_path);
+    let (seed_dirs_smi_phase, corpus_dir_smi_phase, crash_dir_smi_phase, snapshot_bin_smi_phase) = get_smi_fuzz_phase_dirs_for_replay(seed_path, corpus_path, crash_path, snapshot_path);
     if !snapshot_bin_smi_phase.exists() {
         error!("snapshot not found, unable to replay");
         exit_elegantly(ExitProcessType::Ok);

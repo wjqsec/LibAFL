@@ -2,6 +2,7 @@ use std::vec::*;
 use std::string::*;
 use std::ffi::{CString, CStr};
 use std::path::Path;
+use log::info;
 use once_cell::sync::Lazy;
 use std::{path::PathBuf, process};
 
@@ -41,14 +42,12 @@ pub fn gen_ovmf_qemu_args() -> Vec<String>
         "isa-debugcon.iobase=0x402".to_string(),
         "-L".to_string(),
         qemu_firmware_dir.to_string_lossy().to_string(),
-        "-serial".to_string(),
-        "null".to_string(),
         "-global".to_string(),
         "mch.extended-tseg-mbytes=56".to_string(),
     ];
-    if ! unsafe { QEMU_DEBUG_LOG_PATH.to_string_lossy().to_string().is_empty() } {
+    if !unsafe { QEMU_DEBUG_LOG_PATH.to_string_lossy().to_string().is_empty() } {
         ret.push("-debugcon".to_string());
-        ret.push(format!("file:{}",unsafe {OVMF_VARS_PATH.to_string_lossy().to_string()}).to_string());
+        ret.push(format!("file:{}",unsafe {QEMU_DEBUG_LOG_PATH.to_string_lossy().to_string()}).to_string());
     }
     ret
 

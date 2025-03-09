@@ -741,7 +741,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                             }
                         }
                     }
-                } else if len == 0{
+                } else if len == 0 {
                     let ret_pcd_ptr : u64 = 0xb000000000000000;  
                     unsafe {
                         cpu.write_mem(addr, &ret_pcd_ptr.to_le_bytes());

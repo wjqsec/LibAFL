@@ -501,7 +501,6 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
         Duration::from_secs(100000),
     )
     .expect("Failed to create QemuExecutor");
-
     let mut ret = Vec::new();
     if input_corpus.is_dir() {
         let mut corpus_inputs = Vec::new();
