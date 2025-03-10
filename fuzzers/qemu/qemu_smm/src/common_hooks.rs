@@ -979,7 +979,7 @@ pub fn bbl_translate_smm_fuzz_phase(cpu : CPU, pc : u64) {
 }
 pub fn bbl_debug(cpu : CPU) {
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
-    if unsafe {IN_SMI == true}
+    // if unsafe {IN_SMI == true}
     {
         let rax : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
         let rbx : GuestReg = cpu.read_reg(Regs::Rbx).unwrap();
