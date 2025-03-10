@@ -74,8 +74,6 @@ static mut STREAM_OVER_TIMES : u64 = 0;
 static mut ASSERT_TIMES : u64 = 0;
 static mut NOTFOUND_TIMES : u64 = 0;
 
-static mut LAST_EXIT_CRASH : bool = false;
-
 const INIT_FUZZ_TIMEOUT_BBL : u64 = 500000;
 static mut INIT_FUZZ_TIMEOUT_TIME : u64 = 2 * 60;
 
@@ -124,7 +122,6 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         STREAM_OVER_TIMES = 0;
         ASSERT_TIMES = 0;
         NOTFOUND_TIMES = 0;
-        LAST_EXIT_CRASH = false;
     }
     unskip();
     gen_init_random_seed(&seed_dirs);
@@ -167,9 +164,6 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         // set_fuzz_mem_switch(fuzz_input);
         
         let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, INIT_FUZZ_TIMEOUT_BBL,false, true);
-        unsafe {
-            LAST_EXIT_CRASH = false;
-        }
         if let Ok(qemu_exit_reason) = qemu_exit_reason
         {
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
@@ -195,7 +189,6 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                         },
                         LIBAFL_QEMU_END_CRASH => {
                             unsafe {
-                                LAST_EXIT_CRASH = true;
                                 CRASH_TIMES += 1;
                             }
                         },
@@ -224,7 +217,6 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
             }
             else if let QemuExitReason::Crash = qemu_exit_reason {
                 unsafe {
-                    LAST_EXIT_CRASH = true;
                     CRASH_TIMES += 1;
                 }
             }
@@ -374,7 +366,6 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
         STREAM_OVER_TIMES = 0;
         ASSERT_TIMES = 0;
         NOTFOUND_TIMES = 0;
-        LAST_EXIT_CRASH = false;
     }
     
     let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 500000000,false, false);
@@ -401,9 +392,6 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
 
         
         let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, INIT_FUZZ_TIMEOUT_BBL,false, true);
-        unsafe {
-            LAST_EXIT_CRASH = false;
-        }
         if let Ok(qemu_exit_reason) = qemu_exit_reason
         {
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
@@ -429,7 +417,6 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
                         },
                         LIBAFL_QEMU_END_CRASH => {
                             unsafe {
-                                LAST_EXIT_CRASH = true;
                                 CRASH_TIMES += 1;
                             }
                         },
@@ -455,7 +442,6 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
             }
             else if let QemuExitReason::Crash = qemu_exit_reason {
                 unsafe {
-                    LAST_EXIT_CRASH = true;
                     CRASH_TIMES += 1;
                 }
             }

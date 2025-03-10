@@ -83,8 +83,6 @@ static mut ASSERT_TIMES : u64 = 0;
 
 const SMI_FUZZ_TIMEOUT_BBL : u64 = 100000;
 
-static mut LAST_EXIT_CRASH : bool = false;
-
 fn gen_init_random_seed(dir : &PathBuf) {
     let mut initial_input = MultipartInput::<BytesInput>::new();
     initial_input.add_part(0 as u128, BytesInput::new(vec![]), 0x10, 0);
@@ -145,9 +143,6 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu: CPU = in_qemu.first_cpu().unwrap();
         let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, SMI_FUZZ_TIMEOUT_BBL,false, true);
-        unsafe {
-            LAST_EXIT_CRASH = false;
-        }
         let exit_code;
         if let Ok(qemu_exit_reason) = qemu_exit_reason
         {
@@ -157,7 +152,6 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
                         LIBAFL_QEMU_END_CRASH => {
                             unsafe {
                                 CRASH_TIMES += 1;
-                                LAST_EXIT_CRASH = true;
                             }
                             exit_code = ExitKind::Crash;
                         },
@@ -198,7 +192,6 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
             else if let QemuExitReason::Crash = qemu_exit_reason {
                 unsafe {
                     CRASH_TIMES += 1;
-                    LAST_EXIT_CRASH = true;
                 }
                 exit_code = ExitKind::Crash;
             }
@@ -221,9 +214,9 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
             exit_elegantly(ExitProcessType::Error);
             exit_code = ExitKind::Ok;
         }
-        if smm_might_vul() {
-            return ExitKind::Crash;
-        }    
+        // if smm_might_vul() {
+        //     return ExitKind::Crash;
+        // }    
         exit_code
     };
     let mut edges_observer = unsafe {
@@ -438,7 +431,6 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
             else if let QemuExitReason::Crash = qemu_exit_reason {
                 unsafe {
                     CRASH_TIMES += 1;
-                    LAST_EXIT_CRASH = true;
                 }
                 exit_code = ExitKind::Crash;
                 info!("exit callout pc:{} sp:{:#x}",get_readable_addr(pc), 0);
