@@ -464,9 +464,10 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
             exit_elegantly(ExitProcessType::Error);
             exit_code = ExitKind::Ok;
         }
-        if smm_might_vul() {
-            return ExitKind::Crash;
-        } 
+        // if smm_might_vul() {
+        //     debug!("vul found");
+        //     return ExitKind::Crash;
+        // } 
             
         exit_code
     };
