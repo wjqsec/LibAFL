@@ -95,6 +95,9 @@ enum SmmCommand {
         #[arg(short, long, action = clap::ArgAction::SetTrue)]
         use_snapshot: bool,
 
+        #[arg(short, long, action = clap::ArgAction::SetTrue)]
+        save_tmp_snapshot: bool,
+
         #[arg(long, value_parser = parse_duration)]
         fuzz_time: Option<Duration>,
 
@@ -155,10 +158,11 @@ fn main() {
     let crash_path = project_path.join(fuzz_tag.clone()).join("crash");
     let snapshot_path = project_path.join(fuzz_tag.clone()).join("snapshots");
     let log_file = project_path.join(fuzz_tag.clone()).join("qemu_log.txt");
+
     set_ovmf_path(&ovmf_code_copy, &ovmf_var_copy, &log_file);
 
     match args.cmd {
-        SmmCommand::Fuzz { ovmf_code, ovmf_var, use_snapshot, fuzz_time , init_phase_timeout_time} => {
+        SmmCommand::Fuzz { ovmf_code, ovmf_var, use_snapshot, save_tmp_snapshot, fuzz_time , init_phase_timeout_time} => {
             if seed_path.exists() {
                 fs::remove_dir_all(seed_path.clone()).unwrap();
             }
@@ -189,7 +193,7 @@ fn main() {
                 error!("ovmf files not found");
                 exit_elegantly(ExitProcessType::Ok);
             }
-            fuzz((&seed_path, &corpus_path, &crash_path, &snapshot_path), fuzz_time, use_snapshot);
+            fuzz((&seed_path, &corpus_path, &crash_path, &snapshot_path), fuzz_time, use_snapshot, save_tmp_snapshot);
         },
         SmmCommand::Replay { inputs } => {
             if !ovmf_code_copy.exists() || !ovmf_var_copy.exists() {
@@ -221,15 +225,6 @@ fn get_init_phase_dirs_for_replay(module_index : usize, seed_dir : &PathBuf, cor
 
 fn setup_init_phase_dirs_for_fuzz(module_index : usize, seed_dir : &PathBuf, corpus_dir : &PathBuf,  crash_dir : &PathBuf, snapshotdir : &PathBuf) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     let (seed_dirs, corpus_dir, objective_dir, snapshot_bin) = get_init_phase_dirs_for_replay(module_index, seed_dir, corpus_dir, crash_dir, snapshotdir);
-    if fs::metadata(seed_dirs.clone()).is_ok() {
-        fs::remove_dir_all(seed_dirs.clone()).unwrap();
-    }
-    if fs::metadata(corpus_dir.clone()).is_ok() {
-        fs::remove_dir_all(corpus_dir.clone()).unwrap();
-    }
-    if fs::metadata(objective_dir.clone()).is_ok() {
-        fs::remove_dir_all(objective_dir.clone()).unwrap();
-    }
     fs::create_dir_all(seed_dirs.clone()).unwrap();
     fs::create_dir_all(corpus_dir.clone()).unwrap();
     fs::create_dir_all(objective_dir.clone()).unwrap();
@@ -239,31 +234,18 @@ fn get_smi_fuzz_phase_dirs_for_replay(seed_dir : &PathBuf, corpus_dir : &PathBuf
     let seed_dirs = seed_dir.join(PathBuf::from(format!("smi_phase_seed/")));
     let corpus_dir = corpus_dir.join(PathBuf::from(format!("smi_phase_corpus/")));
     let objective_dir = crash_dir.join(PathBuf::from(format!("smi_phase_crash/")));
-    let snapshot_bin = snapshotdir.join("smi_fuzz_vm_snapshot.bin");
-
+    let snapshot_bin = corpus_dir.parent().unwrap().join("smi_phase_snapshot.bin");
     (seed_dirs, corpus_dir, objective_dir, snapshot_bin)
 }
 fn setup_smi_fuzz_phase_dirs_for_fuzz(seed_dir : &PathBuf, corpus_dir : &PathBuf,  crash_dir : &PathBuf, snapshotdir : &PathBuf) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     let (seed_dirs, corpus_dir, objective_dir, snapshot_bin) = get_smi_fuzz_phase_dirs_for_replay(seed_dir, corpus_dir, crash_dir, snapshotdir);
-    if fs::metadata(seed_dirs.clone()).is_ok() {
-        fs::remove_dir_all(seed_dirs.clone()).unwrap();
-    }
-    if fs::metadata(corpus_dir.clone()).is_ok() {
-        fs::remove_dir_all(corpus_dir.clone()).unwrap();
-    }
-    if fs::metadata(objective_dir.clone()).is_ok() {
-        fs::remove_dir_all(objective_dir.clone()).unwrap();
-    }
-    
     fs::create_dir_all(seed_dirs.clone()).unwrap();
     fs::create_dir_all(corpus_dir.clone()).unwrap();
     fs::create_dir_all(objective_dir.clone()).unwrap();
-    
-
     (seed_dirs, corpus_dir, objective_dir, snapshot_bin)
 }
 
-fn fuzz((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf, &PathBuf, &PathBuf), fuzz_time : Option<Duration>, use_snapshot : bool) {
+fn fuzz((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf, &PathBuf, &PathBuf), fuzz_time : Option<Duration>, use_snapshot : bool, save_tmp_snapshot : bool) {
     let args: Vec<String> = gen_ovmf_qemu_args();
     let env: Vec<(String, String)> = env::vars().collect();
     let qemu: Qemu = Qemu::init(args.as_slice(),env.as_slice()).unwrap();
@@ -275,7 +257,6 @@ fn fuzz((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf
     setup_ctrlc_handler();
     let cpu = qemu.first_cpu().unwrap();
     let (seed_dirs_smi_phase, corpus_dir_smi_phase, crash_dir_smi_phase, snapshot_bin_smi_phase) = setup_smi_fuzz_phase_dirs_for_fuzz(seed_path, corpus_path, crash_path, snapshot_path);
-    
 
     let backdoor_id = emulator.modules_mut().backdoor(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, addr : GuestAddr| {
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
@@ -391,7 +372,9 @@ fn fuzz((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf
             },
             SnapshotKind::StartOfSmmInitSnap(_) => {
                 let (seed_dirs, corpus_dir, crash_dir, snapshot_bin) = setup_init_phase_dirs_for_fuzz(module_index, seed_path, corpus_path, crash_path, snapshot_path);
-                FuzzerSnapshot::save_to_file(qemu, &snapshot_bin);
+                if save_tmp_snapshot {
+                    FuzzerSnapshot::save_to_file(qemu, &snapshot_bin);
+                }
                 snapshot = init_phase_fuzz(seed_dirs, corpus_dir, crash_dir, &mut emulator); 
                 module_index += 1;
             },
@@ -444,7 +427,7 @@ fn fuzz((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
         pre_memrw_smm_fuzz_phase(pc, addr, size, out_addr,rw, value, fuzz_input, modules.qemu().first_cpu().unwrap());
     })));
-
+    
     FuzzerSnapshot::save_to_file(qemu, &snapshot_bin_smi_phase);
     smm_phase_fuzz(seed_dirs_smi_phase.clone(), corpus_dir_smi_phase.clone(), crash_dir_smi_phase.clone(), &mut emulator, fuzz_time);
     exit_elegantly(ExitProcessType::Ok);

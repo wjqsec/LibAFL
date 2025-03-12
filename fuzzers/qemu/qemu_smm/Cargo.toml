@@ -44,6 +44,5 @@ rand = "0.8.5"
 fern = "0.6"
 chrono = "0.4"
 clap = { version = "4.5.23", features = ["derive"] }
-
 [build-dependencies]
 libafl_qemu_build = { path = "../../../libafl_qemu/libafl_qemu_build" }
