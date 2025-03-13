@@ -48,6 +48,8 @@ static mut HOB_SIZE : u64 = 0;
 static mut DXE_BUFFER_ADDR : u64 = 0;
 static mut DXE_BUFFER_SIZE : u64 = 0;
 
+pub static mut REDZONE_BUFFER_AADR : u64 = 0;
+
 static mut MISSING_PROTOCOLS: Lazy<HashSet<Uuid>> = Lazy::new(|| {
     HashSet::new()
 });
@@ -418,18 +420,18 @@ pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , o
     }
     pre_memrw_common(pc, addr, size, out_addr, rw, val, fuzz_input, cpu, false);
 }
-pub fn pre_memrw_smm_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
+pub fn pre_memrw_smm_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU) -> bool
 {
     unsafe {
         if IN_FUZZ == false || IN_SMI == false {
-            return;
+            return false;
         }
     }
     if addr >= SMRAM_START && addr < SMRAM_END { // inside sram
-        return;
+        return false;
     }
     if addr >= unsafe {COMMBUF_ADDR} && addr < unsafe {COMMBUF_ADDR + COMMBUF_ACTUAL_SIZE} {  //outside comm buffer
-        return;
+        return false;
     }
     if addr > UEFI_RAM_END && rw == 1 {
         unsafe {
@@ -437,14 +439,24 @@ pub fn pre_memrw_smm_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , ou
         }
     }
     pre_memrw_common(pc, addr, size, out_addr, rw, val, fuzz_input, cpu, false);
+    return true;
 }
 pub fn pre_memrw_smm_fuzz_phase_debug(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
 {
     let pc = cpu.read_reg(Regs::Rip).unwrap();
-    pre_memrw_smm_fuzz_phase(pc, addr, size, out_addr, rw, val, fuzz_input, cpu);
+    let fuzz_value_used = pre_memrw_smm_fuzz_phase(pc, addr, size, out_addr, rw, val, fuzz_input, cpu);
     if unsafe {IN_SMI == true} {
         if rw == 0 {
-            debug!("[mem] pc:{} {} addr:{:#x} size:{} value:{:#x}",get_readable_addr(pc), "read", addr, size, unsafe {*DUMMY_MEMORY_HOST_PTR});
+            if fuzz_value_used {
+                debug!("[mem] pc:{} {} addr:{:#x} size:{} value:{:#x}",get_readable_addr(pc), "read", addr, size, unsafe {*DUMMY_MEMORY_HOST_PTR});
+            } else {
+                let mut mem_data : [u8; 8] = [0 ; 8];
+                unsafe {
+                    cpu.read_mem(addr,&mut mem_data);
+                }
+                debug!("[mem] pc:{} {} addr:{:#x} size:{} value:{:#x}",get_readable_addr(pc), "read", addr, size, u64::from_le_bytes(mem_data));
+            }
+            
         } else {
             debug!("[mem] pc:{} {} addr:{:#x} size:{} value:{:#x}",get_readable_addr(pc), "write", addr, size, val);
         }
@@ -581,28 +593,8 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                     current_group_index = group_index;
                 },
                 Err(io_err) => {    
-                    match io_err {
-                        StreamError::StreamNotFound(id) => {
-                            fuzz_input.generate_init_stream(id);
-                            match fuzz_input.get_smi_group_index_fuzz_data() {
-                                Ok((group_index)) => { 
-                                    current_group_index = group_index;
-                                },
-                                _ => {    
-                                    error!("smi group index data generate error");
-                                    exit_elegantly(ExitProcessType::Error);
-                                }
-                            }
-                        },
-                        StreamError::StreamOutof(id, need_len) => {
-                            let append_data = fuzz_input.append_temp_stream(id, need_len);
-                            current_group_index = append_data[0];
-                        },
-                        _ => {
-                            error!("smi group index data get error");
-                            exit_elegantly(ExitProcessType::Error);
-                        },
-                    }
+                    error!("smi group index data get error");
+                    exit_elegantly(ExitProcessType::Error);
                 }
             }   
             match fuzz_input.get_smi_select_info_fuzz_data() {
@@ -924,7 +916,12 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 DXE_BUFFER_SIZE = arg2;
                 info!("[backdoor] DXE buffer {:#x} {:#x}",DXE_BUFFER_ADDR, DXE_BUFFER_SIZE);
             }
-            
+        },
+        LIBAFL_QEMU_COMMAND_SMM_REPORT_REDZONE_BUFFER_ADDR => {
+            unsafe {
+                REDZONE_BUFFER_AADR = arg1;
+            }
+            info!("[backdoor] red zone buffer addr {:#x}",arg1);
         },
         _ => { 
             error!("[backdoor] backdoor wrong cmd {:}",cmd); 

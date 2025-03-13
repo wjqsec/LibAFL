@@ -84,12 +84,13 @@ static mut ASSERT_TIMES : u64 = 0;
 const SMI_FUZZ_TIMEOUT_BBL : u64 = 100000;
 
 fn gen_init_random_seed(dir : &PathBuf) {
-    let mut initial_input = MultipartInput::<BytesInput>::new();
-    initial_input.add_part(0 as u128, BytesInput::new(vec![]), 0x10, 0);
-    let mut init_seed_path = PathBuf::new(); 
-    init_seed_path.push(dir.clone());
-    init_seed_path.push(PathBuf::from("init.bin"));
-    initial_input.to_file(init_seed_path).unwrap();
+    for i in 0..get_num_smi_group() {
+        let mut initial_input = MultipartInput::<BytesInput>::new();
+        initial_input.add_part(SMI_GROUP_INDEX_MASK as u128, BytesInput::new(vec![i as u8]), 1, 0);
+        let init_seed_path = dir.clone().join(format!("init_{}.bin",i));
+        initial_input.to_file(init_seed_path).unwrap();
+    }
+    
 }
 fn add_uefi_fuzz_token(state : &mut StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, OnDiskCorpus<MultipartInput<BytesInput>>>) {
     let mut tokens = Tokens::new();
@@ -100,7 +101,9 @@ fn add_uefi_fuzz_token(state : &mut StdState<MultipartInput<BytesInput>, CachedO
         tokens.add_token(&(i as u32).to_le_bytes().to_vec());
         tokens.add_token(&(i as u64).to_le_bytes().to_vec());
     }
-
+    for i in 0..50 {
+        tokens.add_token(&(unsafe {REDZONE_BUFFER_AADR} as u64).to_le_bytes().to_vec());
+    }
     state.add_metadata(tokens);
 }
 
@@ -124,8 +127,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
 {
     let qemu = emulator.qemu();
     let cpu: CPU = qemu.first_cpu().unwrap();
-    gen_init_random_seed(&seed_dirs);
-
+    
     let mut snapshot= FuzzerSnapshot::new_empty();
     if let SnapshotKind::StartOfSmmFuzzSnap(s) = run_to_smm_fuzz_point(qemu, cpu) {
         snapshot = s;
@@ -133,6 +135,8 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         error!("run to fuzz point error");
         exit_elegantly(ExitProcessType::Error);
     }
+    gen_init_random_seed(&seed_dirs);
+
     emulator.modules_mut().first_exec_all();
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
         let mut inputs = StreamInputs::from_multiinput(input);

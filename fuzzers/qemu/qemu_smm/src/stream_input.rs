@@ -16,17 +16,17 @@ use rand::Rng;
 use libafl_qemu::Qemu;
 use std::fmt;
 
-const IO_STREAM_MASK : u128 =        0x10000000000000000000000000000000;
-const DRAM_STREAM_MASK : u128 =      0x20000000000000000000000000000000;
-const COMMBUF_STREAM_MASK : u128 =   0x30000000000000000000000000000000;
-const MSR_STREAM_MASK : u128 =       0x40000000000000000000000000000000;
-const STREAMSEQ_STREAM_MASK : u128 = 0x50000000000000000000000000000000;
-const PCD_STREAM_MASK : u128 =       0x60000000000000000000000000000000;
-const SMI_GROUP_INDEX_MASK : u128 =  0x70000000000000000000000000000000;
-const FUZZ_MEM_ENABLE_MASK : u128 =  0x80000000000000000000000000000000;
-const VARIABLE_STREAM_MASK :u128 =   0x90000000000000000000000000000000;
-const CPUID_STREAM_MASK : u128 =     0xa0000000000000000000000000000000;
-const STREAM_MASK : u128 =           0xf0000000000000000000000000000000;
+pub const IO_STREAM_MASK : u128 =        0x10000000000000000000000000000000;
+pub const DRAM_STREAM_MASK : u128 =      0x20000000000000000000000000000000;
+pub const COMMBUF_STREAM_MASK : u128 =   0x30000000000000000000000000000000;
+pub const MSR_STREAM_MASK : u128 =       0x40000000000000000000000000000000;
+pub const STREAMSEQ_STREAM_MASK : u128 = 0x50000000000000000000000000000000;
+pub const PCD_STREAM_MASK : u128 =       0x60000000000000000000000000000000;
+pub const SMI_GROUP_INDEX_MASK : u128 =  0x70000000000000000000000000000000;
+pub const FUZZ_MEM_ENABLE_MASK : u128 =  0x80000000000000000000000000000000;
+pub const VARIABLE_STREAM_MASK :u128 =   0x90000000000000000000000000000000;
+pub const CPUID_STREAM_MASK : u128 =     0xa0000000000000000000000000000000;
+pub const STREAM_MASK : u128 =           0xf0000000000000000000000000000000;
 
 
 #[derive(Debug)]
@@ -45,7 +45,7 @@ pub enum StreamInfo {
 
 impl StreamInfo {
     fn new_io_stream(pc : u64, addr : u64) -> Self {
-        StreamInfo::IoStream(((pc as u128) << 64) | (addr as u128) | IO_STREAM_MASK, 256, 512, 1)
+        StreamInfo::IoStream(((pc as u128) << 64) | (addr as u128) | IO_STREAM_MASK, 256, 512, 2)
     }
     fn new_dram_stream() -> Self {
         StreamInfo::DramStream(DRAM_STREAM_MASK, 512, 1024, 3)
@@ -57,13 +57,13 @@ impl StreamInfo {
         StreamInfo::MsrStream(MSR_STREAM_MASK, 256, 512, 1)
     }
     fn new_stream_seq_stream() -> Self {
-        StreamInfo::StreamSeqStream(STREAMSEQ_STREAM_MASK, 4, 8, 1)
+        StreamInfo::StreamSeqStream(STREAMSEQ_STREAM_MASK, 4, 8, 3)
     }
     fn new_pcd_stream() -> Self {
         StreamInfo::PcdStream(PCD_STREAM_MASK, 32, 64, 1)
     }
     fn new_smi_group_index_stream() -> Self {
-        StreamInfo::SmiGroupIndexStream(SMI_GROUP_INDEX_MASK, 1, 1, 1)
+        StreamInfo::SmiGroupIndexStream(SMI_GROUP_INDEX_MASK, 1, 1, 0)
     }
     fn new_fuzz_mem_switch_stream() -> Self {
         StreamInfo::FuzzMemSwitchStream(FUZZ_MEM_ENABLE_MASK, 1, 1, 1)

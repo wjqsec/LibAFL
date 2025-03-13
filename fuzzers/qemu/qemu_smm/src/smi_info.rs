@@ -77,6 +77,11 @@ pub fn smi_group_info_from_file(filename : &PathBuf) {
 
     *smi_groups_lock = info;
 }
+pub fn get_num_smi_group() -> usize {
+    unsafe {
+        SMI_GROUPS.lock().unwrap().info.len()
+    }
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct SmiGlobalFoundTimeMetadataFeedback;

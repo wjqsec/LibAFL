@@ -234,8 +234,7 @@ fn get_smi_fuzz_phase_dirs_for_replay(seed_dir : &PathBuf, corpus_dir : &PathBuf
     let seed_dirs = seed_dir.join(PathBuf::from(format!("smi_phase_seed/")));
     let corpus_dir = corpus_dir.join(PathBuf::from(format!("smi_phase_corpus/")));
     let objective_dir = crash_dir.join(PathBuf::from(format!("smi_phase_crash/")));
-    // let snapshot_bin = corpus_dir.parent().unwrap().parent().unwrap().join("smi_phase_snapshot.bin"); // change it later
-    let snapshot_bin = corpus_dir.parent().unwrap().join("smi_phase_snapshot.bin");
+    let snapshot_bin = corpus_dir.parent().unwrap().parent().unwrap().join("smi_phase_snapshot.bin");
     (seed_dirs, corpus_dir, objective_dir, snapshot_bin)
 }
 fn setup_smi_fuzz_phase_dirs_for_fuzz(seed_dir : &PathBuf, corpus_dir : &PathBuf,  crash_dir : &PathBuf, snapshotdir : &PathBuf) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
@@ -287,7 +286,7 @@ fn fuzz((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf
 
     if use_snapshot {
         if !snapshot_bin_smi_phase.exists() {
-            error!("snapshot not found, unable to replay");
+            error!("snapshot {} not found, unable to replay", snapshot_bin_smi_phase.to_str().unwrap());
             exit_elegantly(ExitProcessType::Ok);
         }
         info!("found snapshot file, start from snapshot!");
@@ -447,7 +446,7 @@ fn replay((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathB
     let cpu = qemu.first_cpu().unwrap();
     let (seed_dirs_smi_phase, corpus_dir_smi_phase, crash_dir_smi_phase, snapshot_bin_smi_phase) = get_smi_fuzz_phase_dirs_for_replay(seed_path, corpus_path, crash_path, snapshot_path);
     if !snapshot_bin_smi_phase.exists() {
-        error!("snapshot not found, unable to replay");
+        error!("snapshot {} not found, unable to replay", snapshot_bin_smi_phase.to_str().unwrap());
         exit_elegantly(ExitProcessType::Ok);
     }
 
@@ -517,7 +516,7 @@ fn coverage((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &Pat
     let cpu = qemu.first_cpu().unwrap();
     let (seed_dirs_smi_phase, corpus_dir_smi_phase, crash_dir_smi_phase, snapshot_bin_smi_phase) = get_smi_fuzz_phase_dirs_for_replay(seed_path, corpus_path, crash_path, snapshot_path);
     if !snapshot_bin_smi_phase.exists() {
-        error!("snapshot not found, unable to replay");
+        error!("snapshot {} not found, unable to replay", snapshot_bin_smi_phase.to_str().unwrap());
         exit_elegantly(ExitProcessType::Ok);
     }
     let backdoor_id = emulator.modules_mut().backdoor(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, addr : GuestAddr| {
@@ -652,7 +651,7 @@ fn report((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathB
     let cpu = qemu.first_cpu().unwrap();
     let (seed_dirs_smi_phase, corpus_dir_smi_phase, crash_dir_smi_phase, snapshot_bin_smi_phase) = get_smi_fuzz_phase_dirs_for_replay(seed_path, corpus_path, crash_path, snapshot_path);
     if !snapshot_bin_smi_phase.exists() {
-        error!("snapshot not found, unable to replay");
+        error!("snapshot {} not found, unable to replay", snapshot_bin_smi_phase.to_str().unwrap());
         exit_elegantly(ExitProcessType::Ok);
     }
     let backdoor_id = emulator.modules_mut().backdoor(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, addr : GuestAddr| {
