@@ -196,7 +196,7 @@ fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut 
         
     };
 
-    debug!("[io] post_io_read {pc:#x} {io_addr:#x} {size:#x} {value:#x}");
+    debug!("[io] post_io_read pc:{} io_addr:{io_addr:#x} size:{size:#x} value:{value:#x}",get_readable_addr(pc));
 
 }
 
@@ -240,7 +240,7 @@ fn pre_io_write_common(base : GuestAddr, offset : GuestAddr,size : usize, data :
         },
     };
     let addr = base + offset;
-    debug!("[io] pre_io_write {pc:#x} {addr:#x} {size:#x} {value:#x}");
+    debug!("[io] pre_io_write pc:{} io_addr:{addr:#x} size:{size:#x} value:{value:#x}",get_readable_addr(pc));
 }
 
 pub fn pre_io_write_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool, cpu : CPU)
