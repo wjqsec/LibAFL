@@ -234,6 +234,7 @@ fn get_smi_fuzz_phase_dirs_for_replay(seed_dir : &PathBuf, corpus_dir : &PathBuf
     let seed_dirs = seed_dir.join(PathBuf::from(format!("smi_phase_seed/")));
     let corpus_dir = corpus_dir.join(PathBuf::from(format!("smi_phase_corpus/")));
     let objective_dir = crash_dir.join(PathBuf::from(format!("smi_phase_crash/")));
+    // let snapshot_bin = corpus_dir.parent().unwrap().parent().unwrap().join("smi_phase_snapshot.bin"); // change it later
     let snapshot_bin = corpus_dir.parent().unwrap().join("smi_phase_snapshot.bin");
     (seed_dirs, corpus_dir, objective_dir, snapshot_bin)
 }

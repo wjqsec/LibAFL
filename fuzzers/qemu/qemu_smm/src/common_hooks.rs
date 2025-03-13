@@ -440,17 +440,15 @@ pub fn pre_memrw_smm_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , ou
 }
 pub fn pre_memrw_smm_fuzz_phase_debug(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
 {
-    let op;
-    if rw == 0 {
-        op = "read";
-    } else {
-        op = "write";
-    }
     let pc = cpu.read_reg(Regs::Rip).unwrap();
-    if unsafe {IN_SMI == true} {
-        debug!("[mem] pc:{} {} addr:{:#x} value:{:#x}",get_readable_addr(pc), op, addr, val);
-    }
     pre_memrw_smm_fuzz_phase(pc, addr, size, out_addr, rw, val, fuzz_input, cpu);
+    if unsafe {IN_SMI == true} {
+        if rw == 0 {
+            debug!("[mem] pc:{} {} addr:{:#x} size:{} value:{:#x}",get_readable_addr(pc), "read", addr, size, unsafe {*DUMMY_MEMORY_HOST_PTR});
+        } else {
+            debug!("[mem] pc:{} {} addr:{:#x} size:{} value:{:#x}",get_readable_addr(pc), "write", addr, size, val);
+        }
+    }
 }
 
 fn rdmsr_common(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fuzz_input : &mut StreamInputs)
