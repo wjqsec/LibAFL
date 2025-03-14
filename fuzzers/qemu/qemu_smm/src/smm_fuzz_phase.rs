@@ -81,7 +81,7 @@ static mut STREAM_OVER_TIMES : u64 = 0;
 static mut ASSERT_TIMES : u64 = 0;
 
 
-const SMI_FUZZ_TIMEOUT_BBL : u64 = 100000;
+const SMI_FUZZ_TIMEOUT_BBL : u64 = 200000;
 
 fn gen_init_random_seed(dir : &PathBuf) {
     for i in 0..get_num_smi_group() {
