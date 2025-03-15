@@ -393,7 +393,12 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
                         LIBAFL_QEMU_END_CRASH => {
                             unsafe {CRASH_TIMES += 1;}
                             exit_code = ExitKind::Crash;
-                            info!("exit crash pc:{} sp:{:#x}",get_readable_addr(arg1), arg2);
+                            let mut rsp_data_buf : [u8; 8] = [0 ; 8];
+                            unsafe {
+                                cpu.read_mem(arg2,&mut rsp_data_buf);
+                            }
+                            let rsp_data = u64::from_le_bytes(rsp_data_buf);
+                            info!("exit crash pc:{} rsp:{:#x} [rsp]:{:#x}",get_readable_addr(arg1), arg2, get_readable_addr(arg2));
                         },
                         LIBAFL_QEMU_END_SMM_FUZZ_END => {
                             unsafe {END_TIMES += 1;}
