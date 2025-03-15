@@ -398,7 +398,7 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
                                 cpu.read_mem(arg2,&mut rsp_data_buf);
                             }
                             let rsp_data = u64::from_le_bytes(rsp_data_buf);
-                            info!("exit crash pc:{} rsp:{:#x} [rsp]:{:#x}",get_readable_addr(arg1), arg2, get_readable_addr(arg2));
+                            info!("exit crash pc:{} rsp:{:#x} [rsp]:{:#x}",get_readable_addr(arg1), arg2, get_readable_addr(rsp_data));
                         },
                         LIBAFL_QEMU_END_SMM_FUZZ_END => {
                             unsafe {END_TIMES += 1;}
@@ -442,7 +442,13 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
                     CRASH_TIMES += 1;
                 }
                 exit_code = ExitKind::Crash;
-                info!("exit callout pc:{} sp:{:#x}",get_readable_addr(pc), 0);
+                let rsp : GuestReg = cpu.read_reg(Regs::Rsp).unwrap();
+                let mut rsp_data_buf : [u8; 8] = [0 ; 8];
+                unsafe {
+                    cpu.read_mem(rsp,&mut rsp_data_buf);
+                }
+                let rsp_data = u64::from_le_bytes(rsp_data_buf);
+                info!("exit callout pc:{} sp:{:#x} [rsp]:{:#x}",get_readable_addr(pc), rsp, get_readable_addr(rsp_data));
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 error!("ctrl-C");
