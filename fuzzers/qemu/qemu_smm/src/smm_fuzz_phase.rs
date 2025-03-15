@@ -385,6 +385,7 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
         let in_cpu = in_qemu.first_cpu().unwrap();
         let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, SMI_FUZZ_TIMEOUT_BBL,false, true);
         let exit_code;
+        let rsp : GuestReg = in_cpu.read_reg(Regs::Rsp).unwrap();
         if let Ok(qemu_exit_reason) = qemu_exit_reason
         {
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
@@ -395,7 +396,7 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
                             exit_code = ExitKind::Crash;
                             let mut rsp_data_buf : [u8; 8] = [0 ; 8];
                             unsafe {
-                                cpu.read_mem(arg2,&mut rsp_data_buf);
+                                in_cpu.read_mem(arg2,&mut rsp_data_buf);
                             }
                             let rsp_data = u64::from_le_bytes(rsp_data_buf);
                             info!("exit crash pc:{} rsp:{:#x} [rsp]:{}",get_readable_addr(arg1), arg2, get_readable_addr(rsp_data));
@@ -426,26 +427,25 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
             else if let QemuExitReason::Timeout = qemu_exit_reason {
                 unsafe {TIMEOUT_TIMES += 1;}
                 exit_code = ExitKind::Timeout;
-                info!("exit timeout pc:{} sp:{:#x}",get_readable_addr(pc), 0);
+                info!("exit timeout pc:{} sp:{:#x}",get_readable_addr(pc), rsp);
             }
             else if let QemuExitReason::StreamNotFound = qemu_exit_reason {
                 exit_code = ExitKind::Ok;
-                info!("exit stream not found pc:{} sp:{:#x}",get_readable_addr(pc), 0);
+                info!("exit stream not found pc:{} sp:{:#x}",get_readable_addr(pc), rsp);
             }
             else if let QemuExitReason::StreamOutof = qemu_exit_reason {
                 unsafe {STREAM_OVER_TIMES += 1;}
                 exit_code = ExitKind::Ok;
-                info!("exit stream over pc:{} sp:{:#x}",get_readable_addr(pc), 0);
+                info!("exit stream over pc:{} sp:{:#x}",get_readable_addr(pc), rsp);
             }
             else if let QemuExitReason::Crash = qemu_exit_reason {
                 unsafe {
                     CRASH_TIMES += 1;
                 }
                 exit_code = ExitKind::Crash;
-                let rsp : GuestReg = cpu.read_reg(Regs::Rsp).unwrap();
                 let mut rsp_data_buf : [u8; 8] = [0 ; 8];
                 unsafe {
-                    cpu.read_mem(rsp,&mut rsp_data_buf);
+                    in_cpu.read_mem(rsp,&mut rsp_data_buf);
                 }
                 let rsp_data = u64::from_le_bytes(rsp_data_buf);
                 info!("exit callout pc:{} sp:{:#x} [rsp]:{}",get_readable_addr(pc), rsp, get_readable_addr(rsp_data));
