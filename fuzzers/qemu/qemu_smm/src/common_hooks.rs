@@ -821,7 +821,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
         LIBAFL_QEMU_COMMAND_SMM_GET_SAVE_REGISTER_FUZZ_DATA => {
             let addr = arg1;
             let reg_size = arg2;
-            if unsafe { IN_SMI } {
+            if unsafe { IN_SMI && IN_FUZZ } {
                 ret = 1;
                 if reg_size != 0 {
                     match fuzz_input.get_save_register_fuzz_data(reg_size) {
