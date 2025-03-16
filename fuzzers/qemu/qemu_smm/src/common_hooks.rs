@@ -976,7 +976,7 @@ pub fn bbl_translate_smm_fuzz_phase(cpu : CPU, pc : u64) {
 
 
 fn disassemble_raw_instruction(cpu : CPU, pc : u64) -> Vec<String> {
-    let mut code = [0 as u8; 0x200];
+    let mut code = [0 as u8; 0x30];
     unsafe {
         cpu.read_mem(pc, &mut code);
     }
@@ -1011,7 +1011,7 @@ pub fn bbl_debug(cpu : CPU) {
         if !get_readable_addr(pc).contains(":") {
             let disas = disassemble_raw_instruction(cpu, pc);
             for ins in disas {
-                debug!("{}",ins);
+                debug!("[bbl]-> {}",ins);
             }
         }
     }
