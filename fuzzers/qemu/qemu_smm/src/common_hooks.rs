@@ -13,6 +13,7 @@ use std::vec::*;
 use std::slice;
 use std::cmp::min;
 use std::collections::{HashSet};
+use iced_x86::{Decoder, DecoderOptions, Formatter, Instruction, NasmFormatter};
 use uuid::*;
 use crate::smi_info::*;
 use crate::coverage::*;
@@ -972,6 +973,30 @@ pub fn bbl_translate_smm_fuzz_phase(cpu : CPU, pc : u64) {
         }
     }
 }
+
+
+fn disassemble_raw_instruction(cpu : CPU, pc : u64) -> Vec<String> {
+    let mut code = [0 as u8; 0x200];
+    unsafe {
+        cpu.read_mem(pc, &mut code);
+    }
+    let mut decoder =
+        Decoder::with_ip(64, &code, pc, DecoderOptions::NONE);
+    let mut formatter = NasmFormatter::new();
+    formatter.options_mut().set_first_operand_char_index(10);
+    let mut rets = Vec::new();
+    let mut instruction = Instruction::default();
+    while decoder.can_decode() {
+        decoder.decode_out(&mut instruction);
+        let mut output = String::new();
+        formatter.format(&instruction, &mut output);
+        rets.push(output);
+        if iced_x86::FlowControl::Next != instruction.flow_control() {
+            break;
+        }
+    }
+    rets
+}
 pub fn bbl_debug(cpu : CPU) {
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
     // if unsafe {IN_SMI == true}
@@ -983,6 +1008,12 @@ pub fn bbl_debug(cpu : CPU) {
         let rsi : GuestReg = cpu.read_reg(Regs::Rsi).unwrap();
         let rdi : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
         debug!("[bbl]-> {} pc:{} rax:{rax:#x} rbx:{rbx:#x} rcx:{rcx:#x} rdx:{rdx:#x} rsi:{rsi:#x} rdi:{rdi:#x}",get_exec_count(), get_readable_addr(pc));
+        if !get_readable_addr(pc).contains(":") {
+            let disas = disassemble_raw_instruction(cpu, pc);
+            for ins in disas {
+                debug!("{}",ins);
+            }
+        }
     }
     bbl_exec_cov_record_common(pc);
     unsafe {
