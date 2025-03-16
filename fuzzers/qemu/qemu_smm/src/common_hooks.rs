@@ -818,6 +818,52 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 ret = 0;
             }
         },
+        LIBAFL_QEMU_COMMAND_SMM_GET_SAVE_REGISTER_FUZZ_DATA => {
+            let addr = arg1;
+            let reg_size = arg2;
+            if unsafe { IN_FUZZ } {
+                ret = 1;
+                if reg_size != 0 {
+                    match fuzz_input.get_save_register_fuzz_data(reg_size) {
+                        Ok((fuzz_input_ptr)) => { 
+                            unsafe {
+                                cpu.write_mem(addr, slice::from_raw_parts(fuzz_input_ptr, reg_size as usize));
+                            }
+                        },
+                        Err(io_err) => {    
+                            match io_err {
+                                StreamError::StreamNotFound(id) => {
+                                    fuzz_input.generate_init_stream(id);
+                                    match fuzz_input.get_save_register_fuzz_data(reg_size) {
+                                        Ok((fuzz_input_ptr)) => { 
+                                            unsafe {
+                                                cpu.write_mem(addr, slice::from_raw_parts(fuzz_input_ptr, reg_size as usize));
+                                            }
+                                        },
+                                        _ => {    
+                                            error!("save register generate error, request too much variable data {:}",reg_size);
+                                            exit_elegantly(ExitProcessType::Error);
+                                        }
+                                    }
+                                },
+                                StreamError::StreamOutof(id, need_len) => {
+                                    let append_data = fuzz_input.append_temp_stream(id, need_len);
+                                    unsafe {
+                                        cpu.write_mem(addr, append_data.as_slice());
+                                    }
+                                },
+                                _ => {
+                                    error!("save register data get error");
+                                    exit_elegantly(ExitProcessType::Error);
+                                },
+                            }
+                        }
+                    } 
+                }
+            } else {
+                ret = 0;
+            }
+        },
         LIBAFL_QEMU_COMMAND_SMM_GET_SMI_GROUP_INDEX_FUZZ_DATA => {
             
         },
