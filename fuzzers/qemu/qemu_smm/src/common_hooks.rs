@@ -51,6 +51,8 @@ static mut DXE_BUFFER_SIZE : u64 = 0;
 
 pub static mut REDZONE_BUFFER_AADR : u64 = 0;
 
+static mut IN_READYTOLOCK : bool = false;
+
 static mut MISSING_PROTOCOLS: Lazy<HashSet<Uuid>> = Lazy::new(|| {
     HashSet::new()
 });
@@ -361,51 +363,13 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
 
 }
 
-pub static mut MEM_SHOULD_FUZZ_SWITCH : bool = false;
-
-pub fn set_fuzz_mem_switch(fuzz_input : &mut StreamInputs) {
-    unsafe {MEM_SHOULD_FUZZ_SWITCH = false;}
-    match fuzz_input.get_fuzz_mem_switch_fuzz_data() {
-        Ok(data) => { 
-            unsafe { 
-                if data & 1 == 1 {
-                    unsafe { MEM_SHOULD_FUZZ_SWITCH = true; }
-                }
-            }
-        },
-        Err(io_err) => {    
-            match io_err {
-                StreamError::StreamNotFound(id) => {
-                    fuzz_input.generate_init_stream(id);
-                    match fuzz_input.get_fuzz_mem_switch_fuzz_data() {
-                        Ok(data) => { 
-                            if data & 1 == 1 {
-                                unsafe { MEM_SHOULD_FUZZ_SWITCH = true; }
-                            }
-                        },
-                        _ => {    
-                            error!("fuzz mem switch data generate error");
-                            exit_elegantly(ExitProcessType::Error);
-                        }
-                    }
-                },
-                StreamError::StreamOutof(id, need_len) => {
-                    let append_data = fuzz_input.append_temp_stream(id, need_len);
-                    if append_data[0] & 1 == 1 {
-                        unsafe { MEM_SHOULD_FUZZ_SWITCH = true; }
-                    }
-                },
-                _ => {
-                    error!("fuzz mem switch data get error");
-                    exit_elegantly(ExitProcessType::Error);
-                }
-            }
-        }
-    }
-}
 pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
 {
     unsafe {
+        if IN_READYTOLOCK && addr >= UEFI_RAM_END {
+            *out_addr = DUMMY_MEMORY_ADDR;
+            return;
+        }
         if IN_FUZZ == false {
             return;
         }
@@ -418,6 +382,7 @@ pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , o
                 return;
             }  
         }
+
     }
     pre_memrw_common(pc, addr, size, out_addr, rw, val, fuzz_input, cpu, false);
 }
@@ -746,6 +711,16 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             unsafe {
                 HOB_ADDR = arg1;
                 HOB_SIZE = arg2;
+            }
+        },
+        LIBAFL_QEMU_COMMAND_SMM_REPORT_READYTOLOCK_START => {
+            unsafe {
+                IN_READYTOLOCK = true;
+            }
+        },
+        LIBAFL_QEMU_COMMAND_SMM_REPORT_READYTOLOCK_END => {
+            unsafe {
+                IN_READYTOLOCK = false;
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_SMI_ENTER => {

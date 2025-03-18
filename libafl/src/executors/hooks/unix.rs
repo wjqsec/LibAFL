@@ -4,7 +4,7 @@ pub mod unix_signal_handler {
     use alloc::{boxed::Box, string::String, vec::Vec};
     use core::{mem::transmute, ptr::addr_of_mut};
     use std::{io::Write, panic};
-    use std::process::{Command, exit};
+    use std::process::{self, exit, Command};
 
     use libafl_bolts::os::unix_signals::{ucontext_t, Handler, Signal};
     use libc::siginfo_t;
@@ -237,11 +237,12 @@ pub mod unix_signal_handler {
         } else {
             {
                 log::error!("Double crash\n");
+                process::exit(0);
                 #[cfg(target_os = "android")]
                 let si_addr = (_info._pad[0] as i64) | ((_info._pad[1] as i64) << 32);
                 #[cfg(not(target_os = "android"))]
                 let si_addr = { _info.si_addr() as usize };
-
+                
                 log::error!(
                     "We crashed at addr 0x{si_addr:x}, but are not in the target... Bug in the fuzzer? Exiting."
                 );
@@ -268,11 +269,12 @@ pub mod unix_signal_handler {
             }
 
             {
-                log::error!("Type QUIT to restart the child");
-                let mut line = String::new();
-                while line.trim() != "QUIT" {
-                    let _ = std::io::stdin().read_line(&mut line);
-                }
+                
+                // log::error!("Type QUIT to restart the child");
+                // let mut line = String::new();
+                // while line.trim() != "QUIT" {
+                //     let _ = std::io::stdin().read_line(&mut line);
+                // }
             }
 
             // TODO tell the parent to not restart

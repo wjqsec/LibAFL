@@ -340,7 +340,8 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                             snapshot.delete(qemu);
                             return SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::new_empty());
                         }
-                    } 
+                    }
+                    error!("run to next module error {} {}",cmd, sync_exit_reason); 
                 }
             }
             error!("fuzz one module over, run to next module error");
