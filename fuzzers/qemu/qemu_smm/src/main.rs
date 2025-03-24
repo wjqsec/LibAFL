@@ -311,8 +311,8 @@ fn fuzz((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf
             let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
             rdmsr_smm_fuzz_phase(in_ecx, out_eax, out_edx, fuzz_input);
         })));
-        let wrmsr_id = emulator.modules_mut().wrmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32| {
-            wrmsr_common(in_ecx, in_eax, in_edx);
+        let wrmsr_id = emulator.modules_mut().wrmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32, handled : *mut bool| {
+            wrmsr_common(in_ecx, in_eax, in_edx, handled);
         })));
         let mut memrw_id = emulator.modules_mut().memrw(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr, rw : u32 , value : u128| {
             let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
@@ -346,8 +346,8 @@ fn fuzz((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
         rdmsr_init_fuzz_phase(in_ecx, out_eax, out_edx, fuzz_input);
     })));
-    let wrmsr_id = emulator.modules_mut().wrmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32| {
-        wrmsr_common(in_ecx, in_eax, in_edx);
+    let wrmsr_id = emulator.modules_mut().wrmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32, handled : *mut bool| {
+        wrmsr_common(in_ecx, in_eax, in_edx, handled);
     })));
     let mut memrw_id = emulator.modules_mut().memrw(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr, rw : u32 , value : u128| {
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
@@ -420,8 +420,8 @@ fn fuzz((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
         rdmsr_smm_fuzz_phase(in_ecx, out_eax, out_edx, fuzz_input);
     })));
-    let wrmsr_id = emulator.modules_mut().wrmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32| {
-        wrmsr_common(in_ecx, in_eax, in_edx);
+    let wrmsr_id = emulator.modules_mut().wrmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32, handled : *mut bool| {
+        wrmsr_common(in_ecx, in_eax, in_edx, handled);
     })));
     let mut memrw_id = emulator.modules_mut().memrw(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr, rw : u32 , value : u128| {
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
@@ -489,8 +489,8 @@ fn replay((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathB
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
         rdmsr_smm_fuzz_phase(in_ecx, out_eax, out_edx, fuzz_input);
     })));
-    let wrmsr_id = emulator.modules_mut().wrmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32| {
-        wrmsr_common(in_ecx, in_eax, in_edx);
+    let wrmsr_id = emulator.modules_mut().wrmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32, handled : *mut bool| {
+        wrmsr_common(in_ecx, in_eax, in_edx, handled);
     })));
     let mut memrw_id = emulator.modules_mut().memrw(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr, rw : u32 , value : u128| {
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
@@ -565,8 +565,8 @@ fn coverage((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &Pat
             let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
             rdmsr_init_fuzz_phase(in_ecx, out_eax, out_edx, fuzz_input);
         })));
-        let wrmsr_id = emulator.modules_mut().wrmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32| {
-            wrmsr_common(in_ecx, in_eax, in_edx);
+        let wrmsr_id = emulator.modules_mut().wrmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32, handled : *mut bool| {
+            wrmsr_common(in_ecx, in_eax, in_edx, handled);
         })));
         let mut memrw_id = emulator.modules_mut().memrw(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, pc : GuestAddr, addr : GuestAddr, size : u64, out_addr : *mut GuestAddr, rw : u32 , value : u128| {
             let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
@@ -623,8 +623,8 @@ fn coverage((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &Pat
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
         rdmsr_smm_fuzz_phase(in_ecx, out_eax, out_edx, fuzz_input);
     })));
-    let wrmsr_id = emulator.modules_mut().wrmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32| {
-        wrmsr_common(in_ecx, in_eax, in_edx);
+    let wrmsr_id = emulator.modules_mut().wrmsr(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32, handled : *mut bool| {
+        wrmsr_common(in_ecx, in_eax, in_edx, handled);
     })));
     
     FuzzerSnapshot::restore_from_file(qemu, &snapshot_bin_smi_phase);

@@ -826,7 +826,7 @@ where
             let exec = get_raw_hook!(
                 hook,
                 wrmsr_0_exec_hook_wrapper::<ET, S>,
-                unsafe extern "C" fn(&mut HookState<1, PreWrmsrHookId>, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32)
+                unsafe extern "C" fn(&mut HookState<1, PreWrmsrHookId>, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32, handled : *mut bool)
             );
             self.wrmsr_hooks.push(Box::pin(HookState::new(
                 PreWrmsrHookId::invalid(),

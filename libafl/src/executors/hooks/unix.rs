@@ -237,7 +237,6 @@ pub mod unix_signal_handler {
         } else {
             {
                 log::error!("Double crash\n");
-                process::exit(0);
                 #[cfg(target_os = "android")]
                 let si_addr = (_info._pad[0] as i64) | ((_info._pad[1] as i64) << 32);
                 #[cfg(not(target_os = "android"))]
@@ -269,7 +268,7 @@ pub mod unix_signal_handler {
             }
 
             {
-                
+                process::exit(0);
                 // log::error!("Type QUIT to restart the child");
                 // let mut line = String::new();
                 // while line.trim() != "QUIT" {

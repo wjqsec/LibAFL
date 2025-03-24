@@ -17911,7 +17911,13 @@ extern "C" {
 extern "C" {
     pub fn libafl_add_pre_wrmsr_hook(
         callback: ::std::option::Option<
-            unsafe extern "C" fn(data: u64, in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32),
+            unsafe extern "C" fn(
+                data: u64,
+                in_ecx: u32,
+                in_eax: *mut u32,
+                in_edx: *mut u32,
+                handled: *mut bool,
+            ),
         >,
         data: u64,
     ) -> usize;

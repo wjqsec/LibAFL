@@ -760,6 +760,7 @@ create_hook_types!(
         in_ecx: u32,
         in_eax: *mut u32,
         in_edx: *mut u32,
+        handled: *mut bool,
     ),
     Box<
         dyn for<'a> FnMut(
@@ -768,6 +769,7 @@ create_hook_types!(
             u32,
             *mut u32,
             *mut u32,
+            *mut bool,
         ),
     >,
     extern "C" fn(
@@ -775,9 +777,10 @@ create_hook_types!(
         u32,
         *mut u32,
         *mut u32,
+        *mut bool,
     )
 );
-create_exec_wrapper!(wrmsr, (in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32), 0, 1, PreWrmsrHookId);
+create_exec_wrapper!(wrmsr, (in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32, handled : *mut bool), 0, 1, PreWrmsrHookId);
 
 create_hook_id!(PreMemrw, libafl_qemu_remove_pre_memrw_hook, true);
 create_hook_types!(
@@ -1086,11 +1089,11 @@ impl QemuHooks {
     pub fn add_pre_wrmsr_hook<T: Into<HookData>>(
         &self,
         data: T,    
-        callback: Option<unsafe extern "C" fn(T, u32, *mut u32, *mut u32)>,
+        callback: Option<unsafe extern "C" fn(T, u32, *mut u32, *mut u32, *mut bool)>,
     ) -> PreWrmsrHookId {
         unsafe {
             let data: u64 = data.into().0;
-            let callback: Option<unsafe extern "C" fn(u64, u32, *mut u32, *mut u32)> = transmute(callback);
+            let callback: Option<unsafe extern "C" fn(u64, u32, *mut u32, *mut u32, *mut bool)> = transmute(callback);
             let num = libafl_qemu_sys::libafl_add_pre_wrmsr_hook(callback, data);
             PreWrmsrHookId(num)
         }

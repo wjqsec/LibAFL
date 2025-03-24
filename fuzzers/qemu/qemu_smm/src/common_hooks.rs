@@ -84,9 +84,12 @@ pub fn set_exec_count(val :u64) {
 }
 
 
-pub fn wrmsr_common(in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32)
+pub fn wrmsr_common(in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32, handled : *mut bool)
 {
     unsafe {
+        // if IN_FUZZ || IN_READYTOLOCK {
+        //     *handled = true;
+        // }
         let eax_info = *in_eax;
         let edx_info = *in_edx;
         debug!("[wrmsr] {in_ecx:#x} {eax_info:#x} {edx_info:#x}");
@@ -153,7 +156,6 @@ pub fn cpuid_init_fuzz_phase(in_eax: u32, out_eax: *mut u32,out_ebx: *mut u32, o
 fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut u8, 
                        fuzz_input : &mut StreamInputs, cpu : CPU)
 {   
-
     match fuzz_input.get_io_fuzz_data(pc, io_addr, size as u64) {
         Ok(fuzz_input_ptr) => { 
             unsafe {data.copy_from(fuzz_input_ptr, size as usize);}
@@ -254,13 +256,15 @@ pub fn pre_io_write_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : 
     let addr = base + offset;
     unsafe {
         if IN_FUZZ == false {
+            // if IN_READYTOLOCK {
+            //     *handled = true;
+            // }
             return;
         }
         if addr != 0x402 {
             *handled = true;
             return;
         }
-        
     }
     pre_io_write_common(base, offset, size, data, handled, cpu);
 }
@@ -366,10 +370,11 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
 pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
 {
     unsafe {
-        if IN_READYTOLOCK && addr >= UEFI_RAM_END {
-            *out_addr = DUMMY_MEMORY_ADDR;
-            return;
-        }
+        // if IN_READYTOLOCK && addr >= UEFI_RAM_END {
+        //     *DUMMY_MEMORY_HOST_PTR = 0;
+        //     *out_addr = DUMMY_MEMORY_ADDR;
+        //     return;
+        // }
         if IN_FUZZ == false {
             return;
         }
@@ -529,7 +534,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 let dummy_memory_phy_addr = cpu.get_phys_addr_with_offset(DUMMY_MEMORY_ADDR).unwrap();
                 let dummy_memory_host_addr = cpu.get_host_addr(dummy_memory_phy_addr);
                 DUMMY_MEMORY_HOST_PTR = dummy_memory_host_addr as *mut u64;
-                debug!("[backdoor] dummy memory info {:#x} {:#x} {:?}",DUMMY_MEMORY_ADDR,DUMMY_MEMORY_SIZE,DUMMY_MEMORY_HOST_PTR);
+                info!("[backdoor] dummy memory info {:#x} {:#x} {:?}",DUMMY_MEMORY_ADDR,DUMMY_MEMORY_SIZE,DUMMY_MEMORY_HOST_PTR);
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_SMI_SELECT_INFO => {
@@ -539,7 +544,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 let smi_select_buffer_phy_addr = cpu.get_phys_addr_with_offset(SMI_SELECT_BUFFER_ADDR).unwrap();
                 let smi_select_buffer_host_addr = cpu.get_host_addr(smi_select_buffer_phy_addr);
                 SMI_SELECT_BUFFER_HOST_PTR = smi_select_buffer_host_addr;
-                debug!("[backdoor] smi select buffer {:#x} {:#x} {:#x} {:?}",SMI_SELECT_BUFFER_ADDR, SMI_SELECT_BUFFER_SIZE, smi_select_buffer_phy_addr, SMI_SELECT_BUFFER_HOST_PTR);
+                info!("[backdoor] smi select buffer {:#x} {:#x} {:#x} {:?}",SMI_SELECT_BUFFER_ADDR, SMI_SELECT_BUFFER_SIZE, smi_select_buffer_phy_addr, SMI_SELECT_BUFFER_HOST_PTR);
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_COMMBUF_INFO => {
@@ -549,7 +554,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 let commbuf_phy_addr = cpu.get_phys_addr_with_offset(COMMBUF_ADDR).unwrap();
                 let commbuf_host_addr = cpu.get_host_addr(commbuf_phy_addr);
                 COMMBUF_HOST_PTR = commbuf_host_addr;
-                debug!("[backdoor] comm buffer {:#x} {:#x} {:#x} {:?}",COMMBUF_ADDR, COMMBUF_SIZE, commbuf_phy_addr, COMMBUF_HOST_PTR);
+                info!("[backdoor] comm buffer {:#x} {:#x} {:#x} {:?}",COMMBUF_ADDR, COMMBUF_SIZE, commbuf_phy_addr, COMMBUF_HOST_PTR);
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_SMI_SELECT_FUZZ_DATA => {
@@ -727,7 +732,6 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             unsafe {
                 IN_SMI = true;
             }
-
             let guid_addr = arg1;
             let target_addr = arg2;
             if guid_addr == 0 {
@@ -740,8 +744,6 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 let handler_guid = Uuid::from_bytes_le(guid_buf);
                 debug!("[backdoor] SMI enter {} {}", handler_guid.to_string(), get_readable_addr(target_addr));
             }
-            
-            
         },
         LIBAFL_QEMU_COMMAND_SMM_SMI_EXIT => {
             unsafe {
@@ -857,14 +859,16 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             let end_addr = arg3;
             let mut guid_buf : [u8; 16] = [0 ; 16];
             unsafe {
-                cpu.read_mem(addr,&mut guid_buf);
-            }
-            let module_guid = Uuid::from_bytes_le(guid_buf);
-            module_range(&module_guid, start_addr, end_addr);
-            unsafe {
                 MISSING_PROTOCOLS.clear();
             }
-            info!("[Module] {} {:#x}-{:#x}", module_guid.to_string(), start_addr, end_addr);
+            if addr != 0 {
+                unsafe {
+                    cpu.read_mem(addr,&mut guid_buf);
+                }
+                let module_guid = Uuid::from_bytes_le(guid_buf);
+                module_range(&module_guid, start_addr, end_addr);
+                info!("[Module] {} {:#x}-{:#x}", module_guid.to_string(), start_addr, end_addr);
+            }
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_SMI_INFO => {
             let index = arg1;
@@ -918,7 +922,6 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                     cpu.read_mem(addr,&mut guid_buf);
                     let protocol_guid = Uuid::from_bytes_le(guid_buf);
                     MISSING_PROTOCOLS.insert(protocol_guid);
-                    
                 }
             } else {
                 let mut i = 0;
