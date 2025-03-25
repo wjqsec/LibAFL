@@ -194,7 +194,6 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                         },
                         _ => {
                             error!("exit sync_exit_reason {sync_exit_reason}");
-                            exit_elegantly(ExitProcessType::Error);
                         },
                     }
                 }
