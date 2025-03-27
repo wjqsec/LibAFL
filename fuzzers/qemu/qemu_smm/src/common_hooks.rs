@@ -87,7 +87,7 @@ pub fn set_exec_count(val :u64) {
 pub fn wrmsr_common(in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32, handled : *mut bool)
 {
     unsafe {
-        // if IN_FUZZ || IN_READYTOLOCK {
+        // if IN_FUZZ {
         //     *handled = true;
         // }
         let eax_info = *in_eax;
@@ -256,9 +256,6 @@ pub fn pre_io_write_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : 
     let addr = base + offset;
     unsafe {
         if IN_FUZZ == false {
-            // if IN_READYTOLOCK {
-            //     *handled = true;
-            // }
             return;
         }
         if addr != 0x402 {
@@ -370,11 +367,6 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
 pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mut GuestAddr, rw : u32, val : u128, fuzz_input : &mut StreamInputs, cpu : CPU)
 {
     unsafe {
-        // if IN_READYTOLOCK && addr >= UEFI_RAM_END {
-        //     *DUMMY_MEMORY_HOST_PTR = 0;
-        //     *out_addr = DUMMY_MEMORY_ADDR;
-        //     return;
-        // }
         if IN_FUZZ == false {
             return;
         }
