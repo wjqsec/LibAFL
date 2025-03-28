@@ -207,7 +207,7 @@ fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut 
 
 }
 
-pub fn post_io_read_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, io_err : u32, 
+pub fn post_io_read_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool, 
     fuzz_input : &mut StreamInputs, cpu : CPU)
 {
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
@@ -216,10 +216,11 @@ pub fn post_io_read_init_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : 
         if IN_FUZZ == false {
             return;
         }
+        *handled = true;
     }
     post_io_read_common(pc, addr, size, data, fuzz_input, cpu);
 }
-pub fn post_io_read_smm_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, io_err : u32, 
+pub fn post_io_read_smm_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool, 
     fuzz_input : &mut StreamInputs, cpu : CPU)
 {
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
@@ -228,6 +229,7 @@ pub fn post_io_read_smm_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : u
         if IN_FUZZ == false || IN_SMI == false {
             return;
         }
+        *handled = true;
     }
     post_io_read_common(pc, addr, size, data, fuzz_input, cpu);
 }

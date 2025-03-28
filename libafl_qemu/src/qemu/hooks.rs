@@ -631,7 +631,7 @@ create_hook_types!(
         device_offset: GuestAddr,
         size: usize,
         val: *mut u8,
-        handled: u32,
+        handled: *mut bool,
     ),
     Box<
         dyn for<'a> FnMut(
@@ -641,7 +641,7 @@ create_hook_types!(
             GuestAddr,
             usize,
             *mut u8,
-            u32,
+            *mut bool,
         ),
     >,
     extern "C" fn(
@@ -650,10 +650,10 @@ create_hook_types!(
         GuestAddr,
         usize,
         *mut u8,
-        u32,
+        *mut bool,
     )
 );
-create_exec_wrapper!(devread, (base: GuestAddr, offset: GuestAddr, size: usize, data :  *mut u8, handled :u32), 0, 1, PostDeviceregReadHookId);
+create_exec_wrapper!(devread, (base: GuestAddr, offset: GuestAddr, size: usize, data :  *mut u8, handled :*mut bool), 0, 1, PostDeviceregReadHookId);
 
 create_hook_id!(PreDeviceregWrite, libafl_qemu_remove_pre_devicereg_write_hook, true);
 create_hook_types!(
@@ -1033,11 +1033,11 @@ impl QemuHooks {
     pub fn add_post_devicereg_read_hook<T: Into<HookData>>(
         &self,
         data: T,    
-        callback: Option<unsafe extern "C" fn(T, GuestAddr, GuestAddr, usize, *mut u8, u32)>,
+        callback: Option<unsafe extern "C" fn(T, GuestAddr, GuestAddr, usize, *mut u8, *mut bool)>,
     ) -> PostDeviceregReadHookId {
         unsafe {
             let data: u64 = data.into().0;
-            let callback: Option<unsafe extern "C" fn(u64, GuestAddr, GuestAddr, usize, *mut u8, u32)> = transmute(callback);
+            let callback: Option<unsafe extern "C" fn(u64, GuestAddr, GuestAddr, usize, *mut u8, *mut bool)> = transmute(callback);
             let num = libafl_qemu_sys::libafl_add_post_devicereg_read_hook(callback, data);
             PostDeviceregReadHookId(num)
         }

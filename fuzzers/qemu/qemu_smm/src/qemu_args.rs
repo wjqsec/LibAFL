@@ -44,6 +44,8 @@ pub fn gen_ovmf_qemu_args() -> Vec<String>
         qemu_firmware_dir.to_string_lossy().to_string(),
         "-global".to_string(),
         "mch.extended-tseg-mbytes=56".to_string(),
+        "-serial".to_string(),
+        "null".to_string(),
     ];
     if !unsafe { QEMU_DEBUG_LOG_PATH.to_string_lossy().to_string().is_empty() } {
         ret.push("-debugcon".to_string());

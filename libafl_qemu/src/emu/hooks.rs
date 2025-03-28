@@ -675,7 +675,7 @@ where
             let exec = get_raw_hook!(
                 hook,
                 devread_0_exec_hook_wrapper::<ET, S>,
-                unsafe extern "C" fn(&mut HookState<1, PostDeviceregReadHookId>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : u32)
+                unsafe extern "C" fn(&mut HookState<1, PostDeviceregReadHookId>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool)
             );
             self.devread_hooks.push(Box::pin(HookState::new(
                 PostDeviceregReadHookId::invalid(),

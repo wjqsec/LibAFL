@@ -171,14 +171,12 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
                         },
                         _ => {
                             error!("exit error with sync exit arg {:#x}",sync_exit_reason);
-                            exit_elegantly(ExitProcessType::Error);
                             exit_code = ExitKind::Ok;
                         }
                     }
                 }
                 else {
                     error!("exit error with sync exit cmd {:#x}",cmd);
-                    exit_elegantly(ExitProcessType::Error);
                     exit_code = ExitKind::Ok;
                 }
             }
@@ -204,23 +202,17 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
             }
             else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason {
                 error!("Unexpected breakpoint hit");
-                exit_elegantly(ExitProcessType::Error);
                 exit_code = ExitKind::Ok;
             }
             else {
                 error!("Unexpected exit");
-                exit_elegantly(ExitProcessType::Error);
                 exit_code = ExitKind::Ok;
             }
         }
         else    {
-            error!("Unexpected exit");
-            exit_elegantly(ExitProcessType::Error);
+            error!("exit {:?}",qemu_exit_reason);
             exit_code = ExitKind::Ok;
         }
-        // if smm_might_vul() {
-        //     return ExitKind::Crash;
-        // }    
         exit_code
     };
     let mut edges_observer = unsafe {
@@ -413,14 +405,12 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
                         },
                         _ => {
                             error!("exit error with sync exit arg {:#x}",sync_exit_reason);
-                            exit_elegantly(ExitProcessType::Error);
                             exit_code = ExitKind::Ok;
                         }
                     }
                 }
                 else {
                     error!("exit error with sync exit cmd {:#x}",cmd);
-                    exit_elegantly(ExitProcessType::Error);
                     exit_code = ExitKind::Ok;
                 }
             }
@@ -452,29 +442,21 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 error!("ctrl-C");
-                exit_elegantly(ExitProcessType::Error);
                 exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason {
                 error!("Unexpected breakpoint hit");
-                exit_elegantly(ExitProcessType::Error);
                 exit_code = ExitKind::Ok;
             }
             else {
                 error!("Unexpected exit");
-                exit_elegantly(ExitProcessType::Error);
                 exit_code = ExitKind::Ok;
             }
         }
         else    {
-            error!("Unexpected exit");
-            exit_elegantly(ExitProcessType::Error);
+            error!("exit {:?}",qemu_exit_reason);
             exit_code = ExitKind::Ok;
         }
-        // if smm_might_vul() {
-        //     debug!("vul found");
-        //     return ExitKind::Crash;
-        // } 
             
         exit_code
     };

@@ -199,7 +199,6 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                 }
                 else {
                     error!("exit cmd {cmd} {pc:#x}");
-                    exit_elegantly(ExitProcessType::Error);
                 }
             }
             else if let QemuExitReason::Timeout = qemu_exit_reason {
@@ -221,20 +220,16 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 error!("Ctrl+C");
-                exit_elegantly(ExitProcessType::Error);
             }
             else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason {
                 error!("exit Breakpoint");
-                exit_elegantly(ExitProcessType::Error);
             }
             else {
                 error!("exit unknown");
-                exit_elegantly(ExitProcessType::Error);
             }
         }
         else    {
-            error!("exit 6");
-            exit_elegantly(ExitProcessType::Error);
+            error!("exit {:?}",qemu_exit_reason);
         }
         
             
@@ -421,13 +416,11 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
                         },
                         _ => {
                             error!("exit sync_exit_reason {sync_exit_reason}");
-                            exit_elegantly(ExitProcessType::Error);
                         },
                     }
                 }
                 else {
                     error!("exit cmd {cmd} {pc:#x}");
-                    exit_elegantly(ExitProcessType::Error);
                 }
             }
             else if let QemuExitReason::Timeout = qemu_exit_reason {
@@ -446,20 +439,16 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 error!("Ctrl+C");
-                exit_elegantly(ExitProcessType::Error);
             }
             else if let QemuExitReason::Breakpoint(_) = qemu_exit_reason {
                 error!("exit Breakpoint");
-                exit_elegantly(ExitProcessType::Error);
             }
             else {
                 error!("exit unknown");
-                exit_elegantly(ExitProcessType::Error);
             }
         }
         else    {
-            error!("exit 6");
-            exit_elegantly(ExitProcessType::Error);
+            error!("exit {:?}",qemu_exit_reason);
         }
         
             

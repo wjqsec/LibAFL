@@ -17840,7 +17840,7 @@ extern "C" {
                 device_offset: target_ulong,
                 size: usize,
                 val: *mut u8,
-                handled: u32,
+                handled: *mut bool,
             ),
         >,
         data: u64,
