@@ -47,7 +47,7 @@ pub enum StreamInfo {
 
 impl StreamInfo {
     fn new_io_stream(pc : u64, addr : u64) -> Self {
-        StreamInfo::IoStream(((pc as u128) << 64) | (addr as u128) | IO_STREAM_MASK, 256, 1024, 2)
+        StreamInfo::IoStream(((pc as u128) << 64) | (addr as u128) | IO_STREAM_MASK, 256, 1024, 5)
     }
     fn new_dram_stream() -> Self {
         StreamInfo::DramStream(DRAM_STREAM_MASK, 0x1000, 0x8000, 3)

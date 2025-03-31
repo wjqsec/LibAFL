@@ -45,9 +45,12 @@ where
         if input.parts().is_empty(){
             Ok(MutationResult::Skipped)
         } else {
-            let dist = WeightedIndex::new(input.weights()).unwrap();
+            let dist = WeightedIndex::new(input.weights());
+            if dist.is_err() {
+                return Ok(MutationResult::Skipped);
+            }
             let mut rng = thread_rng();
-            let selected = dist.sample(&mut rng);
+            let selected = dist.unwrap().sample(&mut rng);
             let limit = input.part_limit(selected);
             let mutated = input.part_mut(selected).unwrap();
             state.set_max_size(limit);
