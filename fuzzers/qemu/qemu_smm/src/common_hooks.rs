@@ -55,6 +55,9 @@ static mut IN_READYTOLOCK : bool = false;
 
 static mut CURRENT_MODULE : Uuid = Uuid::nil();
 
+static mut CURRENT_SMI_INDEX : u64 = 0;
+static mut CURRENT_SMI_TIMES : u64 = 0;
+
 static mut MISSING_PROTOCOLS: Lazy<HashSet<Uuid>> = Lazy::new(|| {
     HashSet::new()
 });
@@ -288,7 +291,7 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
 {
     match rw { // read
         0 => {
-            match fuzz_input.get_dram_fuzz_data(addr, size, consistent_access) {
+            match fuzz_input.get_dram_fuzz_data(addr, size, consistent_access, unsafe{CURRENT_SMI_INDEX}, unsafe{CURRENT_SMI_TIMES}) {
                 Ok(data) => { 
                     unsafe {
                         *DUMMY_MEMORY_HOST_PTR = data;
@@ -299,7 +302,7 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
                     match io_err {
                         StreamError::StreamNotFound(id) => {
                             fuzz_input.generate_init_stream(id);
-                            match fuzz_input.get_dram_fuzz_data(addr,size, consistent_access) {
+                            match fuzz_input.get_dram_fuzz_data(addr,size, consistent_access, unsafe{CURRENT_SMI_INDEX}, unsafe{CURRENT_SMI_TIMES}) {
                                 Ok(data) => { 
                                     unsafe { 
                                         *DUMMY_MEMORY_HOST_PTR = data;
@@ -316,7 +319,7 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
                             let append_data = fuzz_input.append_temp_stream(id, need_len);
                             if consistent_access {
                                 fuzz_input.init_dram_value(addr, &append_data);
-                                match fuzz_input.get_dram_fuzz_data(addr, size, consistent_access) {
+                                match fuzz_input.get_dram_fuzz_data(addr, size, consistent_access, unsafe{CURRENT_SMI_INDEX}, unsafe{CURRENT_SMI_TIMES}) {
                                     Ok(data) => { 
                                         unsafe { 
                                             *DUMMY_MEMORY_HOST_PTR = data;
@@ -955,6 +958,12 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             }
             let protocol_guid = Uuid::from_bytes_le(guid_buf);
             info!("[CONFLICT] {}",protocol_guid.to_string());
+        },
+        LIBAFL_QEMU_COMMAND_SMM_REPORT_SMI_INVOKE_INFO => {
+            unsafe {
+                CURRENT_SMI_INDEX = arg1;
+                CURRENT_SMI_TIMES = arg2;
+            }
         },
         _ => { 
             error!("[backdoor] backdoor wrong cmd {:}",cmd); 

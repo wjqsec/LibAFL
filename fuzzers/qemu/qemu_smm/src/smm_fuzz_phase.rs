@@ -295,6 +295,14 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
         smi_group_info_to_file(&smi_metadata_fullpath);
     }
+    if state.solutions().last().is_some() {
+        for i in 0..(state.solutions().last().unwrap().0 + 1) {
+            let testcase = state.solutions().get(CorpusId::from(i)).unwrap().clone().take().clone();
+            let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
+            let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
+            smi_group_info_to_file(&smi_metadata_fullpath);
+        }
+    }
 
 
     for i in 0..( state.corpus().last().unwrap().0 + 1) {
