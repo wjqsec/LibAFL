@@ -53,6 +53,8 @@ pub static mut REDZONE_BUFFER_AADR : u64 = 0;
 
 static mut IN_READYTOLOCK : bool = false;
 
+static mut CURRENT_MODULE : Uuid = Uuid::nil();
+
 static mut MISSING_PROTOCOLS: Lazy<HashSet<Uuid>> = Lazy::new(|| {
     HashSet::new()
 });
@@ -860,6 +862,9 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                     cpu.read_mem(addr,&mut guid_buf);
                 }
                 let module_guid = Uuid::from_bytes_le(guid_buf);
+                unsafe {
+                    CURRENT_MODULE = module_guid.clone();
+                }
                 module_range(&module_guid, start_addr, end_addr);
                 info!("[Module] {} {:#x}-{:#x}", module_guid.to_string(), start_addr, end_addr);
             }
@@ -941,6 +946,15 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 REDZONE_BUFFER_AADR = arg1;
             }
             info!("[backdoor] red zone buffer addr {:#x}",arg1);
+        },
+        LIBAFL_QEMU_COMMAND_SMM_REPORT_CONFLICT_DXE_PROTOCOL => {
+            let addr = arg1;
+            let mut guid_buf : [u8; 16] = [0 ; 16];
+            unsafe {
+                cpu.read_mem(addr,&mut guid_buf);
+            }
+            let protocol_guid = Uuid::from_bytes_le(guid_buf);
+            info!("[CONFLICT] {}",protocol_guid.to_string());
         },
         _ => { 
             error!("[backdoor] backdoor wrong cmd {:}",cmd); 

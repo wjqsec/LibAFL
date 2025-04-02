@@ -101,7 +101,7 @@ fn add_uefi_fuzz_token(state : &mut StdState<MultipartInput<BytesInput>, CachedO
         tokens.add_token(&(i as u32).to_le_bytes().to_vec());
         tokens.add_token(&(i as u64).to_le_bytes().to_vec());
     }
-    for i in 0..50 {
+    for i in 0..40 {
         tokens.add_token(&(unsafe {REDZONE_BUFFER_AADR} as u64).to_le_bytes().to_vec());
     }
     state.add_metadata(tokens);
