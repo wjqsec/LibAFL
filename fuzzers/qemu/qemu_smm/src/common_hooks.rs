@@ -874,13 +874,14 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_SMI_INFO => {
             let index = arg1;
-            let addr = arg2;
+            let guid_addr = arg2;
+            let addr = arg3;
             let mut guid_buf : [u8; 16] = [0 ; 16];
             unsafe {
-                cpu.read_mem(addr,&mut guid_buf);
+                cpu.read_mem(guid_addr,&mut guid_buf);
             }
             let smi_guid = Uuid::from_bytes_le(guid_buf);
-            info!("[SMI] {} {}",index, smi_guid.to_string());
+            info!("[SMI] {} {} {}",index, smi_guid.to_string(), get_readable_addr(addr));
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_SMM_FUZZ_GROUP => {
             let group = arg1 as u8;
