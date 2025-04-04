@@ -960,6 +960,21 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             let protocol_guid = Uuid::from_bytes_le(guid_buf);
             info!("[CONFLICT] {}",protocol_guid.to_string());
         },
+        LIBAFL_QEMU_COMMAND_SMM_REPORT_TMP_SMI => {
+            let smi_guid_addr = arg1;
+            let reg_type = arg2;
+            let current_module_guid_addr = arg3;
+            let mut guid_buf : [u8; 16] = [0 ; 16];
+            unsafe {
+                cpu.read_mem(smi_guid_addr,&mut guid_buf);
+            }
+            let smi_guid = Uuid::from_bytes_le(guid_buf);
+            unsafe {
+                cpu.read_mem(current_module_guid_addr,&mut guid_buf);
+            }
+            let module_guid = Uuid::from_bytes_le(guid_buf);
+            info!("[TMP_SMI] {} {} {}",smi_guid.to_string(),reg_type,module_guid.to_string());
+        },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_SMI_INVOKE_INFO => {
             unsafe {
                 CURRENT_SMI_INDEX = arg1;
