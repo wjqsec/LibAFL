@@ -80,6 +80,7 @@ static mut CRASH_TIMES : u64 = 0;
 static mut STREAM_OVER_TIMES : u64 = 0;
 static mut ASSERT_TIMES : u64 = 0;
 
+static mut LAST_EXIT_END : bool = false;
 
 const SMI_FUZZ_TIMEOUT_BBL : u64 = 200000;
 
@@ -142,6 +143,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         let mut inputs = StreamInputs::from_multiinput(input);
         unsafe {  
             GLOB_INPUT = (&mut inputs) as *mut StreamInputs;
+            LAST_EXIT_END = false;
         }
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
@@ -162,6 +164,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
                         LIBAFL_QEMU_END_SMM_FUZZ_END => {
                             unsafe {
                                 END_TIMES += 1;
+                                LAST_EXIT_END = true;
                             }
                             exit_code = ExitKind::Ok;
                         },
@@ -346,7 +349,9 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         for i in num_corpus..( state.corpus().last().unwrap().0 + 1) {
             let input = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone().input().clone().unwrap();
             fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &input);
-            let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),30000000, true, false);
+            if unsafe {LAST_EXIT_END} {
+                let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),30000000, true, false);   
+            }
         }
         if ctrlc_pressed() {
             exit_elegantly(ExitProcessType::Ok);
