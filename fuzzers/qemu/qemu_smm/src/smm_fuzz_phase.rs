@@ -346,13 +346,6 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
                 }
             }
         }
-        for i in num_corpus..( state.corpus().last().unwrap().0 + 1) {
-            let input = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone().input().clone().unwrap();
-            fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &input);
-            if unsafe {LAST_EXIT_END} {
-                let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),30000000, true, false);   
-            }
-        }
         if ctrlc_pressed() {
             exit_elegantly(ExitProcessType::Ok);
         }
@@ -360,6 +353,13 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
             if (current_time().as_secs() - state.start_time().as_secs()) > fuzz_time.as_secs() {
                 info!("Fuzz {:?} Finished",fuzz_time);
                 break;
+            }
+        }
+        for i in num_corpus..( state.corpus().last().unwrap().0 + 1) {
+            let input = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone().input().clone().unwrap();
+            fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &input);
+            if unsafe {LAST_EXIT_END} {
+                let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),30000000, true, false);   
             }
         }
     }
