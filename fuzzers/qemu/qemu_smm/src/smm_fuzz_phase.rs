@@ -291,6 +291,10 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
     )));
 
     let mut stages = tuple_list!(ShadowTracingStage::new(&mut shadow_executor),i2s, StdMutationalStage::new(mutator));
+    if state.corpus().is_empty() {
+        error!("no corpus found!");
+        exit_elegantly(ExitProcessType::Ok);
+    }
 
     for i in 0..(state.corpus().last().unwrap().0 + 1) {
         let testcase = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone();

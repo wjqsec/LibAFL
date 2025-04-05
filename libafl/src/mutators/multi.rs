@@ -330,7 +330,7 @@ where
             let other_testcase = state.corpus().get(id)?.borrow_mut();
             // No need to load the input again, it'll still be cached.
             let other = other_testcase.input().as_ref().unwrap();
-            part.bytes_mut()[0] = part.bytes_mut()[0];
+
             Ok(Self::crossover_replace(
                 part,
                 target,
