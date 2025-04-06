@@ -53,7 +53,7 @@ where
     {
         let observer = observers.get(&self.observer_handle).unwrap();
         for (id, tmp_generated, used, input,append_input, limit, weight) in observer.get_newstream().into_iter() {
-            if tmp_generated {
+            if tmp_generated && used != 0 {
                 let mut input = input.unwrap();
                 input.truncate(used);
                 input.extend(append_input);
