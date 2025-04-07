@@ -30,7 +30,7 @@ use libafl::{
 };
 use libafl::prelude::HasCurrentTestcase;
 use libafl::prelude::HasCorpus;
-use libafl::prelude::HasStartTime;
+use libafl::prelude::{ HasStartTime, HasLastFoundTime};
 
 use libafl_bolts::{Error, Named};
 
@@ -88,7 +88,7 @@ pub struct SmiGlobalFoundTimeMetadataFeedback;
 
 impl<S> Feedback<S> for SmiGlobalFoundTimeMetadataFeedback
 where
-    S: HasCurrentTestcase<MultipartInput<BytesInput>> + State<Input = MultipartInput<BytesInput>> + HasCorpus<Input = MultipartInput<BytesInput>> + HasStartTime,
+    S: HasCurrentTestcase<MultipartInput<BytesInput>> + State<Input = MultipartInput<BytesInput>> + HasCorpus<Input = MultipartInput<BytesInput>> + HasStartTime + HasLastFoundTime,
 {
     fn append_metadata<EM, OT>(
             &mut self,
@@ -100,6 +100,7 @@ where
         where
             OT: ObserversTuple<S>,
             EM: EventFirer<State = S>, {
+        state.last_found_time_mut().clone_from(&current_time());
         testcase.set_found_time(current_time().as_micros() - unsafe {*FUZZER_START_TIME});
         Ok(())
     }

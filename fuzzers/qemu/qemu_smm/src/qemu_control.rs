@@ -38,7 +38,6 @@ pub fn qemu_run_once(mut qemu : Qemu, snapshot : & FuzzerSnapshot, timeout : u64
         }
         IN_FUZZ = fuzz;
         IN_SMI = false;
-        reset_smm_might_vul();
         qemu.set_infuzz(fuzz);
         let qemu_exit_reason = qemu.run();
         IN_FUZZ = false;
