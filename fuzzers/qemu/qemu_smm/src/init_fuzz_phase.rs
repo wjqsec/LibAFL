@@ -193,7 +193,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                             }
                         },
                         _ => {
-                            error!("exit sync_exit_reason {sync_exit_reason}");
+                            error!("exit sync_exit_reason {sync_exit_reason} pc:{}",get_readable_addr(pc));
                         },
                     }
                 }
@@ -337,7 +337,12 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                     }
                 }
             }
-            error!("fuzz one module over, run to next module error {:?} pc:{} cmd:{} sync_exit_reason:{}",qemu_exit_reason,get_readable_addr(pc), cmd, sync_exit_reason);
+            if cmd == LIBAFL_QEMU_COMMAND_END && sync_exit_reason == LIBAFL_QEMU_END_CRASH {
+                error!("fuzz one module over, run to next module error {:?} pc:{} cmd:{} sync_exit_reason:{}",qemu_exit_reason,get_readable_addr(arg1), cmd, sync_exit_reason);
+            } else {
+                error!("fuzz one module over, run to next module error {:?} pc:{} cmd:{} sync_exit_reason:{}",qemu_exit_reason,get_readable_addr(pc), cmd, sync_exit_reason);
+            }
+            
             exit_elegantly(ExitProcessType::Error);
         }
     }
@@ -415,7 +420,7 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
                             }
                         },
                         _ => {
-                            error!("exit sync_exit_reason {sync_exit_reason}");
+                            error!("exit sync_exit_reason {sync_exit_reason} pc:{}",get_readable_addr(pc));
                         },
                     }
                 }

@@ -23,7 +23,8 @@ const SMRAM_START : u64 = 0x4800000;
 const SMRAM_END : u64 = 0x8000000;
 
 const UEFI_RAM_START : u64 = 0x100000;
-const UEFI_RAM_END : u64 =   0x8000000;
+// const UEFI_RAM_END : u64 =   0x8000000;
+const UEFI_RAM_END : u64 =   0x100000000;
 pub static mut IN_FUZZ : bool = false;
 
 pub static mut IN_SMI : bool = false;
@@ -367,7 +368,7 @@ pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , o
         if IN_FUZZ == false {
             return;
         }
-        if addr < UEFI_RAM_END && addr >= UEFI_RAM_START {  
+        if addr < UEFI_RAM_END {  
             if !(
                 addr >= HOB_ADDR && addr < (HOB_ADDR + 2) 
                 || addr >= ( HOB_ADDR + 8 ) && addr < (HOB_ADDR + HOB_SIZE) 
