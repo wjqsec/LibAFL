@@ -83,9 +83,9 @@ pub fn set_exec_count(val :u64) {
 pub fn wrmsr_common(in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32, handled : *mut bool)
 {
     unsafe {
-        // if IN_FUZZ {
-        //     *handled = true;
-        // }
+        if IN_FUZZ {
+            *handled = true;
+        }
         let eax_info = *in_eax;
         let edx_info = *in_edx;
         debug!("[wrmsr] {in_ecx:#x} {eax_info:#x} {edx_info:#x}");
@@ -604,97 +604,83 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_COMMBUF_FUZZ_DATA => {
-            if unsafe {IN_FUZZ} {
-                let smi_index = arg1;
-                let smi_invoke_times = arg2;
-                match fuzz_input.get_commbuf_fuzz_data(smi_index, smi_invoke_times) {
-                    Ok((fuzz_input_ptr,  claimed_len, actual_len)) => { 
-                        let written_len = min(unsafe {COMMBUF_SIZE} as usize, actual_len);
-                        unsafe { 
-                            COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, written_len); 
-                            COMMBUF_ACTUAL_SIZE = written_len as u64;
-                        }
-                        ret = claimed_len as u64;
-                    },
-                    Err(io_err) => {    
-                        match io_err {
-                            StreamError::StreamNotFound(id) => {
-                                fuzz_input.generate_init_stream(id);
-                                match fuzz_input.get_commbuf_fuzz_data(smi_index, smi_invoke_times) {
-                                    Ok((fuzz_input_ptr, claimed_len, actual_len)) => { 
-                                        let written_len = min(unsafe {COMMBUF_SIZE} as usize, actual_len);
-                                        unsafe { 
-                                            COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, written_len); 
-                                            COMMBUF_ACTUAL_SIZE = written_len as u64;
-                                        }
-                                        ret = claimed_len as u64;
-                                    },
-                                    _ => {    
-                                        error!("comm buffer generate error");
-                                        exit_elegantly(ExitProcessType::Error);
+            let smi_index = arg1;
+            let smi_invoke_times = arg2;
+            match fuzz_input.get_commbuf_fuzz_data(smi_index, smi_invoke_times) {
+                Ok((fuzz_input_ptr,  claimed_len, actual_len)) => { 
+                    let written_len = min(unsafe {COMMBUF_SIZE} as usize, actual_len);
+                    unsafe { 
+                        COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, written_len); 
+                        COMMBUF_ACTUAL_SIZE = written_len as u64;
+                    }
+                    ret = claimed_len as u64;
+                },
+                Err(io_err) => {    
+                    match io_err {
+                        StreamError::StreamNotFound(id) => {
+                            fuzz_input.generate_init_stream(id);
+                            match fuzz_input.get_commbuf_fuzz_data(smi_index, smi_invoke_times) {
+                                Ok((fuzz_input_ptr, claimed_len, actual_len)) => { 
+                                    let written_len = min(unsafe {COMMBUF_SIZE} as usize, actual_len);
+                                    unsafe { 
+                                        COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, written_len); 
+                                        COMMBUF_ACTUAL_SIZE = written_len as u64;
                                     }
+                                    ret = claimed_len as u64;
+                                },
+                                _ => {    
+                                    error!("comm buffer generate error");
+                                    exit_elegantly(ExitProcessType::Error);
                                 }
-                            },
-                            _ => {
-                                ret = 0;
-                            },
-                        }
+                            }
+                        },
+                        _ => {
+                            ret = 0;
+                        },
                     }
                 }
-            } else {
-                ret = 0;
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_GET_PCD_FUZZ_DATA => {
             let len = arg1;
             let addr = arg2;
             if unsafe { IN_FUZZ } {
-                ret = 1;
-                if len > 0 && len <= 8 {
-                    match fuzz_input.get_pcd_fuzz_data(len) {
-                        Ok((fuzz_input_ptr)) => { 
-                            unsafe {
-                                cpu.write_mem(addr, slice::from_raw_parts(fuzz_input_ptr, len as usize));
-                            }
-                        },
-                        Err(io_err) => {    
-                            match io_err {
-                                StreamError::StreamNotFound(id) => {
-                                    fuzz_input.generate_init_stream(id);
-                                    match fuzz_input.get_pcd_fuzz_data(len) {
-                                        Ok((fuzz_input_ptr)) => { 
-                                            unsafe {
-                                                cpu.write_mem(addr, slice::from_raw_parts(fuzz_input_ptr, len as usize));
-                                            }
-                                        },
-                                        _ => {    
-                                            error!("pcd data generate error");
-                                            exit_elegantly(ExitProcessType::Error);
+                match fuzz_input.get_pcd_fuzz_data(len) {
+                    Ok((fuzz_input_ptr)) => { 
+                        unsafe {
+                            cpu.write_mem(addr, slice::from_raw_parts(fuzz_input_ptr, len as usize));
+                        }
+                    },
+                    Err(io_err) => {    
+                        match io_err {
+                            StreamError::StreamNotFound(id) => {
+                                fuzz_input.generate_init_stream(id);
+                                match fuzz_input.get_pcd_fuzz_data(len) {
+                                    Ok((fuzz_input_ptr)) => { 
+                                        unsafe {
+                                            cpu.write_mem(addr, slice::from_raw_parts(fuzz_input_ptr, len as usize));
                                         }
+                                    },
+                                    _ => {    
+                                        error!("pcd data generate error");
+                                        exit_elegantly(ExitProcessType::Error);
                                     }
-                                },
-                                StreamError::StreamOutof(id, need_len) => {
-                                    let append_data = fuzz_input.append_temp_stream(id, need_len);
-                                    unsafe {
-                                        cpu.write_mem(addr, append_data.as_slice());
-                                    }
-                                    
-                                },
-                                _ => {
-                                    error!("pcd data get error");
-                                    exit_elegantly(ExitProcessType::Error);
-                                },
-                            }
+                                }
+                            },
+                            StreamError::StreamOutof(id, need_len) => {
+                                let append_data = fuzz_input.append_temp_stream(id, need_len);
+                                unsafe {
+                                    cpu.write_mem(addr, append_data.as_slice());
+                                }
+                                
+                            },
+                            _ => {
+                                error!("pcd data get error");
+                                exit_elegantly(ExitProcessType::Error);
+                            },
                         }
                     }
-                } else if len == 0 {
-                    let ret_pcd_ptr : u64 = 0xb000000000000000;  
-                    unsafe {
-                        cpu.write_mem(addr, &ret_pcd_ptr.to_le_bytes());
-                    }
                 }
-            } else {
-                ret = 0;
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_HOB_MEM => {
@@ -759,15 +745,16 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                     },
                                     _ => {    
                                         error!("variable data generate error, request too much variable data {:}",var_size);
-                                        exit_elegantly(ExitProcessType::Error);
+                                        ret = 0;
                                     }
                                 }
                             },
                             StreamError::StreamOutof(id, need_len) => {
-                                let append_data = fuzz_input.append_temp_stream(id, need_len);
-                                unsafe {
-                                    cpu.write_mem(addr, append_data.as_slice());
-                                }
+                                ret = 0;
+                                // let append_data = fuzz_input.append_temp_stream(id, need_len);
+                                // unsafe {
+                                //     cpu.write_mem(addr, append_data.as_slice());
+                                // }
                             },
                             _ => {
                                 error!("variable data get error");
