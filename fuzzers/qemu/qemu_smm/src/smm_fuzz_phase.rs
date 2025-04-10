@@ -315,7 +315,9 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
     for i in 0..( state.corpus().last().unwrap().0 + 1) {
         let input = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone().input().clone().unwrap();
         fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &input);
-        let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),30000000, true, false);
+        if unsafe {LAST_EXIT_END} {
+            let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),30000000, false, false);   
+        }
     }
 
     loop {
@@ -363,7 +365,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
             let input = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone().input().clone().unwrap();
             fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &input);
             if unsafe {LAST_EXIT_END} {
-                let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),30000000, true, false);   
+                let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),30000000, false, false);   
             }
         }
     }

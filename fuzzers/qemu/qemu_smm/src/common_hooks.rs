@@ -23,8 +23,8 @@ const SMRAM_START : u64 = 0x4800000;
 const SMRAM_END : u64 = 0x8000000;
 
 const UEFI_RAM_START : u64 = 0x100000;
-// const UEFI_RAM_END : u64 =   0x8000000;
-const UEFI_RAM_END : u64 =   0x100000000;
+const UEFI_RAM_END : u64 =   0x8000000;
+// const UEFI_RAM_END : u64 =   0x100000000;
 pub static mut IN_FUZZ : bool = false;
 
 pub static mut IN_SMI : bool = false;
@@ -56,10 +56,13 @@ pub static mut REDZONE_BUFFER_AADR : u64 = 0;
 
 static mut IN_READYTOLOCK : bool = false;
 
-static mut CURRENT_MODULE : Uuid = Uuid::nil();
+pub static mut CURRENT_MODULE : Uuid = Uuid::nil();
 
 static mut CURRENT_SMI_INDEX : u64 = 0;
 static mut CURRENT_SMI_TIMES : u64 = 0;
+
+pub static mut DEBUG_TRACE_TEST : bool = false;
+
 
 static mut MISSING_PROTOCOLS: Lazy<HashSet<Uuid>> = Lazy::new(|| {
     HashSet::new()
@@ -368,7 +371,7 @@ pub fn pre_memrw_init_fuzz_phase(pc : GuestReg, addr : GuestAddr, size : u64 , o
         if IN_FUZZ == false {
             return;
         }
-        if addr < UEFI_RAM_END {  
+        if addr < UEFI_RAM_END && addr >= UEFI_RAM_START {  
             if !(
                 addr >= HOB_ADDR && addr < (HOB_ADDR + 2) 
                 || addr >= ( HOB_ADDR + 8 ) && addr < (HOB_ADDR + HOB_SIZE) 
@@ -971,6 +974,10 @@ pub fn set_num_timeout_bbl(bbl : u64) {
 
 
 pub fn bbl_common(cpu : CPU) {
+    // if unsafe {DEBUG_TRACE_TEST} {
+    //     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
+    //     info!("[debug] pc:{}", get_readable_addr(pc));
+    // }
     unsafe {
         match NEXT_EXIT {
             Some(SmmQemuExit::StreamNotFound) => {
