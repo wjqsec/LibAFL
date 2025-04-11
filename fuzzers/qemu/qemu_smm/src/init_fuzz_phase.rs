@@ -356,7 +356,10 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
             unsafe {
                 SMM_INIT_FUZZ_EXIT_SNAPSHOT = ptr::null_mut();
             }
-            
+            if libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 5 * 60  {
+                error!("unable to process, exit");
+                exit_elegantly(ExitProcessType::Error);
+            }
 
         }
     }
