@@ -86,13 +86,28 @@ pub fn set_exec_count(val :u64) {
 pub fn wrmsr_common(in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32, handled : *mut bool)
 {
     unsafe {
-        if IN_FUZZ {
-            *handled = true;
-        }
         let eax_info = *in_eax;
         let edx_info = *in_edx;
         debug!("[wrmsr] {in_ecx:#x} {eax_info:#x} {edx_info:#x}");
     }
+}
+pub fn wrmsr_init_fuzz_phase(in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32, handled : *mut bool)
+{
+    unsafe {
+        if IN_FUZZ {
+            *handled = true;
+        }
+    }
+    wrmsr_common(in_ecx, in_eax, in_edx, handled);
+}
+pub fn wrmsr_smm_fuzz_phase(in_ecx: u32, in_eax: *mut u32, in_edx: *mut u32, handled : *mut bool)
+{
+    unsafe {
+        if IN_FUZZ == true && IN_SMI == true {
+            *handled = true;
+        }
+    }
+    wrmsr_common(in_ecx, in_eax, in_edx, handled);
 }
 fn cpuid_common(in_eax: u32, out_eax: *mut u32,out_ebx: *mut u32, out_ecx: *mut u32, out_edx: *mut u32, fuzz_input : &mut StreamInputs, cpu : CPU)
 {
@@ -999,7 +1014,7 @@ pub fn bbl_common(cpu : CPU) {
 }
 
 pub fn bbl_translate_init_fuzz_phase(cpu : CPU, pc : u64) {
-    if pc > UEFI_RAM_END {
+    if pc >= UEFI_RAM_END || pc < UEFI_RAM_START {
         cpu.exit_crash();
     }
 }
