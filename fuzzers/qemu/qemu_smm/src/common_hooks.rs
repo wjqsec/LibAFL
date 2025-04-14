@@ -285,10 +285,10 @@ pub fn pre_io_write_smm_fuzz_phase(base : GuestAddr, offset : GuestAddr,size : u
 {
     let addr = base + offset;
     unsafe {
-        if IN_FUZZ == false || IN_SMI == false {
-            return;
-        }
-        if addr != 0x402 {
+        // if IN_FUZZ == false || IN_SMI == false {
+        //     return;
+        // }
+        if addr != 0x402 && addr != 0xb2 && addr != 0xb3 {
             *handled = true;
             return;
         }
@@ -1051,7 +1051,7 @@ fn disassemble_raw_instruction(cpu : CPU, pc : u64) -> Vec<String> {
 }
 pub fn bbl_debug(cpu : CPU) {
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
-    // if unsafe {IN_SMI == true}
+    if unsafe {IN_FUZZ == true}
     {
         let rax : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
         let rbx : GuestReg = cpu.read_reg(Regs::Rbx).unwrap();
@@ -1068,23 +1068,5 @@ pub fn bbl_debug(cpu : CPU) {
         }
     }
     bbl_exec_cov_record_common(pc);
-    unsafe {
-        match NEXT_EXIT {
-            Some(SmmQemuExit::StreamNotFound) => {
-                NEXT_EXIT = None;
-                cpu.exit_stream_notfound();
-            },
-            Some(SmmQemuExit::StreamOutof) => {
-                NEXT_EXIT = None;
-                cpu.exit_stream_outof();
-            }
-            _ => {
-            }
-        } 
-    }
-
-    if get_exec_count() > unsafe { NUM_TIMEOUT_BBL } { 
-        cpu.exit_timeout();
-    }
-    set_exec_count(get_exec_count() + 1);
+    bbl_common(cpu);
 }
