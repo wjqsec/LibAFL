@@ -951,6 +951,10 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             let protocol_guid = Uuid::from_bytes_le(guid_buf);
             info!("[CONFLICT] {}",protocol_guid.to_string());
         },
+        LIBAFL_QEMU_COMMAND_SMM_REPORT_LOCKBOX => {
+            let addr = arg1;
+            info!("[LOCKBOX] {}",get_readable_addr(addr));
+        },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_TMP_SMI => {
             let smi_guid_addr = arg1;
             let reg_type = arg2;

@@ -352,14 +352,16 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
             // } else {
             //     error!("fuzz one module over, run to next module error {:?} pc:{} cmd:{} sync_exit_reason:{}",qemu_exit_reason,get_readable_addr(pc), cmd, sync_exit_reason);
             // }
-            exit_snapshot.delete(qemu);
-            unsafe {
-                SMM_INIT_FUZZ_EXIT_SNAPSHOT = ptr::null_mut();
-            }
-            if libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 5 * 60  {
-                error!("unable to process, exit");
-                exit_elegantly(ExitProcessType::Error);
-            }
+            // exit_snapshot.delete(qemu);
+            // unsafe {
+            //     SMM_INIT_FUZZ_EXIT_SNAPSHOT = ptr::null_mut();
+            // }
+            // if libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 5 * 60  {
+            //     error!("unable to process, exit");
+            //     exit_elegantly(ExitProcessType::Error);
+            // }
+            error!("fuzz one module over, run to next module error {:?} pc:{} cmd:{} sync_exit_reason:{}",qemu_exit_reason,get_readable_addr(pc), cmd, sync_exit_reason);
+            exit_elegantly(ExitProcessType::Error);
 
         }
     }
