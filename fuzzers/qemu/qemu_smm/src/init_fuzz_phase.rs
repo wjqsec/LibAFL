@@ -319,12 +319,6 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         }
         if unsafe { !SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() } {
             let exit_snapshot = unsafe { Box::from_raw(SMM_INIT_FUZZ_EXIT_SNAPSHOT) };
-            // unsafe {
-            //     if CURRENT_MODULE.eq(&uuid!("42293093-76b9-4482-8c02-3befdea9b35d")) {
-            //         DEBUG_TRACE_TEST = true;
-            //         info!("aaaaaaaaaaaaa");
-            //     }
-            // }
             let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &exit_snapshot,8000000000, true, false);
             if let Ok(ref qemu_exit_reason) = qemu_exit_reason {
                 if let QemuExitReason::SyncExit = qemu_exit_reason {
@@ -342,27 +336,11 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                     }
                 }
             }
-            // if cmd == LIBAFL_QEMU_COMMAND_END && sync_exit_reason == LIBAFL_QEMU_END_CRASH {
-            //     let mut rsp_data_buf : [u8; 8] = [0 ; 8];
-            //     unsafe {
-            //         cpu.read_mem(arg2,&mut rsp_data_buf);
-            //     }
-            //     let rsp_data = u64::from_le_bytes(rsp_data_buf);
-            //     error!("fuzz one module over, run to next module error {:?} pc:{} cmd:{} sync_exit_reason:{} rsp:{:#x} [rsp]:{}",qemu_exit_reason,get_readable_addr(arg1), cmd, sync_exit_reason, arg2, get_readable_addr(rsp_data));
-            // } else {
-            //     error!("fuzz one module over, run to next module error {:?} pc:{} cmd:{} sync_exit_reason:{}",qemu_exit_reason,get_readable_addr(pc), cmd, sync_exit_reason);
-            // }
-            // exit_snapshot.delete(qemu);
-            // unsafe {
-            //     SMM_INIT_FUZZ_EXIT_SNAPSHOT = ptr::null_mut();
-            // }
-            // if libafl_bolts::current_time().as_secs() - state.last_found_time().as_secs() > 5 * 60  {
-            //     error!("unable to process, exit");
-            //     exit_elegantly(ExitProcessType::Error);
-            // }
-            error!("fuzz one module over, run to next module error {:?} pc:{} cmd:{} sync_exit_reason:{}",qemu_exit_reason,get_readable_addr(pc), cmd, sync_exit_reason);
-            exit_elegantly(ExitProcessType::Error);
-
+            exit_snapshot.restore_fuzz_snapshot(qemu, true);
+            error!("fuzz one module over, run to next module error {:?} pc:{} cmd:{} sync_exit_reason:{}, now replay error",qemu_exit_reason,get_readable_addr(pc), cmd, sync_exit_reason);
+            exit_snapshot.delete(qemu);
+            snapshot.delete(qemu);
+            return SnapshotKind::None;
         }
     }
     unreachable!();

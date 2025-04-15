@@ -61,8 +61,6 @@ pub static mut CURRENT_MODULE : Uuid = Uuid::nil();
 static mut CURRENT_SMI_INDEX : u64 = 0;
 static mut CURRENT_SMI_TIMES : u64 = 0;
 
-pub static mut DEBUG_TRACE_TEST : bool = false;
-
 
 static mut MISSING_PROTOCOLS: Lazy<HashSet<Uuid>> = Lazy::new(|| {
     HashSet::new()
@@ -843,7 +841,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 }
             }
         },
-        LIBAFL_QEMU_COMMAND_SMM_REPORT_SMM_MODULE_INFO => {
+        LIBAFL_QEMU_COMMAND_SMM_REPORT_SMM_MODULE_INFO | LIBAFL_QEMU_COMMAND_SMM_REPORT_DXE_MODULE_INFO => {
             let addr = arg1;
             let start_addr = arg2;
             let end_addr = arg3;
@@ -860,7 +858,11 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                     CURRENT_MODULE = module_guid.clone();
                 }
                 module_range(&module_guid, start_addr, end_addr);
-                info!("[Module] {} {:#x}-{:#x}", module_guid.to_string(), start_addr, end_addr);
+                if cmd == LIBAFL_QEMU_COMMAND_SMM_REPORT_SMM_MODULE_INFO {
+                    info!("[Module_SMM] {} {:#x}-{:#x}", module_guid.to_string(), start_addr, end_addr);
+                } else {
+                    info!("[Module_DXE] {} {:#x}-{:#x}", module_guid.to_string(), start_addr, end_addr);
+                }
             }
         },
         LIBAFL_QEMU_COMMAND_SMM_REPORT_SMI_INFO => {
@@ -993,10 +995,6 @@ pub fn set_num_timeout_bbl(bbl : u64) {
 
 
 pub fn bbl_common(cpu : CPU) {
-    // if unsafe {DEBUG_TRACE_TEST} {
-    //     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
-    //     info!("[debug] pc:{}", get_readable_addr(pc));
-    // }
     unsafe {
         match NEXT_EXIT {
             Some(SmmQemuExit::StreamNotFound) => {
@@ -1053,6 +1051,7 @@ fn disassemble_raw_instruction(cpu : CPU, pc : u64) -> Vec<String> {
     }
     rets
 }
+
 pub fn bbl_debug(cpu : CPU) {
     let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
     if unsafe {IN_FUZZ == true}
@@ -1072,5 +1071,23 @@ pub fn bbl_debug(cpu : CPU) {
         }
     }
     bbl_exec_cov_record_common(pc);
+    bbl_common(cpu);
+}
+
+pub fn bbl_debug_info(cpu : CPU) {
+    let pc : GuestReg = cpu.read_reg(Regs::Pc).unwrap();
+    let rax : GuestReg = cpu.read_reg(Regs::Rax).unwrap();
+    let rbx : GuestReg = cpu.read_reg(Regs::Rbx).unwrap();
+    let rcx : GuestReg = cpu.read_reg(Regs::Rcx).unwrap();
+    let rdx : GuestReg = cpu.read_reg(Regs::Rdx).unwrap();
+    let rsi : GuestReg = cpu.read_reg(Regs::Rsi).unwrap();
+    let rdi : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
+    info!("[bbl]-> {} pc:{} rax:{rax:#x} rbx:{rbx:#x} rcx:{rcx:#x} rdx:{rdx:#x} rsi:{rsi:#x} rdi:{rdi:#x}",get_exec_count(), get_readable_addr(pc));
+    if !get_readable_addr(pc).contains(":") {
+        let disas = disassemble_raw_instruction(cpu, pc);
+        for ins in disas {
+            info!("[bbl]-> {}",ins);
+        }
+    }
     bbl_common(cpu);
 }
