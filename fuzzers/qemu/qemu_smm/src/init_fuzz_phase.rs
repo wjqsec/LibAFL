@@ -120,10 +120,12 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 500000000,false, false);
         if cmd == LIBAFL_QEMU_COMMAND_END {
             if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_PREPARE {
+                exit_snapshot.delete(qemu);
                 snapshot.delete(qemu);
                 return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::new_empty());
             }
             else if sync_exit_reason == LIBAFL_QEMU_END_SMM_MODULE_START {
+                exit_snapshot.delete(qemu);
                 snapshot.delete(qemu);
                 return SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::new_empty());
             }
