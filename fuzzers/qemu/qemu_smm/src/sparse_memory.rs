@@ -159,8 +159,7 @@ impl SparseMemory {
     }
     pub fn init_bytes(&mut self, addr : u64, value : &Vec<u8>) {
         if value.len() > 16 {
-            error!("init bytes too much values");
-            exit_elegantly(ExitProcessType::Error);
+            exit_elegantly(ExitProcessType::Error("init bytes too much values"));
         }
         let mut val_idx = 0;
         for i in 0..16 {

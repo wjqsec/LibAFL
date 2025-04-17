@@ -1,3 +1,4 @@
+use chrono::format;
 use libafl_bolts::AsSliceMut;
 use libafl_qemu::{GuestAddr, GuestReg, CPU,Regs,Qemu};
 
@@ -132,8 +133,7 @@ fn cpuid_common(in_eax: u32, out_eax: *mut u32,out_ebx: *mut u32, out_ecx: *mut 
                             }
                         },
                         _ => {    
-                            error!("cpuid stream generate error");
-                            exit_elegantly(ExitProcessType::Error);
+                            exit_elegantly(ExitProcessType::Error("cpuid stream generate error"));
                         }
                     }
                 },
@@ -148,8 +148,7 @@ fn cpuid_common(in_eax: u32, out_eax: *mut u32,out_ebx: *mut u32, out_ecx: *mut 
                     }
                 },
                 _ => {
-                    error!("cpuid stream get error");
-                    exit_elegantly(ExitProcessType::Error);
+                    exit_elegantly(ExitProcessType::Error("cpuid stream get error"));
                 }
             }
         }
@@ -181,8 +180,7 @@ fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut 
                             unsafe {data.copy_from(fuzz_input_ptr, size as usize);}
                         },
                         _ => {    
-                            error!("io stream generate error");
-                            exit_elegantly(ExitProcessType::Error);
+                            exit_elegantly(ExitProcessType::Error("io stream generate error"));
                         }
                     }
                 },
@@ -194,8 +192,7 @@ fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut 
                     }
                 },
                 _ => {
-                    error!("io stream get error");
-                    exit_elegantly(ExitProcessType::Error);
+                    exit_elegantly(ExitProcessType::Error("io stream get error"));
                 }
             }
         }
@@ -208,8 +205,7 @@ fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut 
         4 => unsafe { *( data as *mut u32) as u64},
         8 => unsafe { *( data as *mut u64) as u64},
         _ => {
-            error! ("post_io_read size error {:#x}!",size);
-            exit_elegantly(ExitProcessType::Error);
+            exit_elegantly(ExitProcessType::Error(&format!("post_io_read size error {:#x}!",size)));
             0
         },
         
@@ -255,8 +251,7 @@ fn pre_io_write_common(base : GuestAddr, offset : GuestAddr,size : usize, data :
         4 => unsafe { *( data as *mut u32) as u64},
         8 => unsafe { *( data as *mut u64) as u64},
         _ => {
-            error! ("pre_io_write size error {:#x}!",size);
-            exit_elegantly(ExitProcessType::Error);
+            exit_elegantly(ExitProcessType::Error(&format!("pre_io_write size error {:#x}!",size)));
             0
         },
     };
@@ -317,8 +312,7 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
                                     }
                                 },
                                 Err(io_err) => {    
-                                    error!("dram fuzz data generate error");
-                                    exit_elegantly(ExitProcessType::Error);
+                                    exit_elegantly(ExitProcessType::Error("dram fuzz data generate error"));
                                 }
                             }
                         },
@@ -335,8 +329,7 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
                                         }
                                     },
                                     _ => {
-                                        error!("dram fuzz data append error");
-                                        exit_elegantly(ExitProcessType::Error);
+                                        exit_elegantly(ExitProcessType::Error("dram fuzz data append error"));
                                     },
                                 }
                             } else {
@@ -348,8 +341,7 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
                             
                         },
                         _ => {
-                            error!("dram fuzz data get error");
-                            exit_elegantly(ExitProcessType::Error);
+                            exit_elegantly(ExitProcessType::Error("dram fuzz data get error"));
                         },
                     }
                 }
@@ -456,8 +448,7 @@ fn rdmsr_common(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fuzz_input : &
                             }
                         },
                         _ => {    
-                            error!("msr fuzz data generate error");
-                            exit_elegantly(ExitProcessType::Error);
+                            exit_elegantly(ExitProcessType::Error("msr fuzz data generate error"));
                         }
                     }
                 },
@@ -470,8 +461,7 @@ fn rdmsr_common(in_ecx: u32, out_eax: *mut u32, out_edx: *mut u32,fuzz_input : &
                     }
                 }
                 _ => {
-                    error!("msr fuzz data get error");
-                    exit_elegantly(ExitProcessType::Error);
+                    exit_elegantly(ExitProcessType::Error("msr fuzz data get error"));
                 }
             }
         }
@@ -565,8 +555,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                     current_group_index = group_index;
                 },
                 Err(io_err) => {    
-                    error!("smi group index data get error");
-                    exit_elegantly(ExitProcessType::Error);
+                    exit_elegantly(ExitProcessType::Error("smi group index data get error"));
                 }
             }   
             match fuzz_input.get_smi_select_info_fuzz_data() {
@@ -578,8 +567,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                             if let Some(index) = get_smi_by_random_group_index(current_group_index, random_index) {
                                 *current_addr = index;
                             } else {
-                                error!("smi select info error");
-                                exit_elegantly(ExitProcessType::Error);
+                                exit_elegantly(ExitProcessType::Error("smi select info error"));
                             }
                         }
                     }
@@ -598,22 +586,19 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                             if let Some(index) = get_smi_by_random_group_index(current_group_index, random_index) {
                                                 *current_addr = index;
                                             } else {
-                                                error!("smi select info error");
-                                                exit_elegantly(ExitProcessType::Error);
+                                                exit_elegantly(ExitProcessType::Error("smi select info error"));
                                             }
                                         }
                                     }
                                     ret = len as u64;
                                 },
                                 _ => {    
-                                    error!("smi select info generate error");
-                                    exit_elegantly(ExitProcessType::Error);
+                                    exit_elegantly(ExitProcessType::Error("smi select info generate error"));
                                 },
                             }
                         },
                         _ => {
-                            error!("smi select info get error");
-                            exit_elegantly(ExitProcessType::Error);
+                            exit_elegantly(ExitProcessType::Error("smi select info get error"));
                         },
                     }
                 }
@@ -645,8 +630,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                     ret = claimed_len as u64;
                                 },
                                 _ => {    
-                                    error!("comm buffer generate error");
-                                    exit_elegantly(ExitProcessType::Error);
+                                    exit_elegantly(ExitProcessType::Error("comm buffer generate error"));
                                 }
                             }
                         },
@@ -678,8 +662,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                         }
                                     },
                                     _ => {    
-                                        error!("pcd data generate error");
-                                        exit_elegantly(ExitProcessType::Error);
+                                        exit_elegantly(ExitProcessType::Error("pcd data generate error"));
                                     }
                                 }
                             },
@@ -691,8 +674,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                 
                             },
                             _ => {
-                                error!("pcd data get error");
-                                exit_elegantly(ExitProcessType::Error);
+                                exit_elegantly(ExitProcessType::Error("pcd data get error"));
                             },
                         }
                     }
@@ -773,8 +755,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                 // }
                             },
                             _ => {
-                                error!("variable data get error");
-                                exit_elegantly(ExitProcessType::Error);
+                                exit_elegantly(ExitProcessType::Error("variable data get error"));
                             },
                         }
                     }
@@ -806,8 +787,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                             }
                                         },
                                         _ => {    
-                                            error!("save register generate error, request too much variable data {:}",reg_size);
-                                            exit_elegantly(ExitProcessType::Error);
+                                            exit_elegantly(ExitProcessType::Error(&format!("save register generate error, request too much variable data {:}",reg_size)));
                                         }
                                     }
                                 },
@@ -818,8 +798,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                     }
                                 },
                                 _ => {
-                                    error!("save register data get error");
-                                    exit_elegantly(ExitProcessType::Error);
+                                    exit_elegantly(ExitProcessType::Error("save register data get error"));
                                 },
                             }
                         }
@@ -979,8 +958,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             }
         },
         _ => { 
-            error!("[backdoor] backdoor wrong cmd {:}",cmd); 
-            exit_elegantly(ExitProcessType::Error)
+            exit_elegantly(ExitProcessType::Error(&format!("backdoor wrong cmd {:}",cmd)));
         },
     };
     cpu.write_reg(Regs::Rax,ret).unwrap();

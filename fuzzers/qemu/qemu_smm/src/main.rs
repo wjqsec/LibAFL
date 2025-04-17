@@ -375,12 +375,10 @@ fn fuzz((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf
                     }))
                 );
                 let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2)= qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),8000000000, true, false);
-                error!("fuzz one module over, run to next module error {:?} pc:{} cmd:{} sync_exit_reason:{}, now replay error",qemu_exit_reason,get_readable_addr(pc), cmd, sync_exit_reason);
-                exit_elegantly(ExitProcessType::Error);
+                exit_elegantly(ExitProcessType::Error(&format!("fuzz one module over, run to next module error {:?} pc:{} cmd:{} sync_exit_reason:{} crash_pc:{}, now replay error",qemu_exit_reason,get_readable_addr(pc), cmd, sync_exit_reason,get_readable_addr(arg1))));
             },
             SnapshotKind::StartOfUefiSnap(_) => { 
-                error!("got StartOfUefi"); 
-                exit_elegantly(ExitProcessType::Error);
+                exit_elegantly(ExitProcessType::Error("got StartOfUefi"));
             },
             SnapshotKind::StartOfSmmInitSnap(_) => {
                 let (seed_dirs, corpus_dir, crash_dir, snapshot_bin) = setup_init_phase_dirs_for_fuzz(module_index, seed_path, corpus_path, crash_path, snapshot_path);
@@ -391,15 +389,13 @@ fn fuzz((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf
                 module_index += 1;
             },
             SnapshotKind::EndOfSmmInitSnap(_) => { 
-                error!("got EndOfSmmInitSnap"); 
-                exit_elegantly(ExitProcessType::Error);
+                exit_elegantly(ExitProcessType::Error("got EndOfSmmInitSnap"));
             },
             SnapshotKind::StartOfSmmModuleSnap(_) => { 
                 break;
             },
             SnapshotKind::StartOfSmmFuzzSnap(_) => { 
-                error!("got StartOfSmmFuzzSnap"); 
-                exit_elegantly(ExitProcessType::Error);
+                exit_elegantly(ExitProcessType::Error("got StartOfSmmFuzzSnap"));
             },
         };
     }
@@ -551,8 +547,7 @@ fn coverage((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &Pat
         }
     }
     if let SnapshotKind::None = snapshot {
-        error!("first breakpoint hit strange place");
-        exit_elegantly(ExitProcessType::Error);
+        exit_elegantly(ExitProcessType::Error("first breakpoint hit strange place"));
     }
     
     

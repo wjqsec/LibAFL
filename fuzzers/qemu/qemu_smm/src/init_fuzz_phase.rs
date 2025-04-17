@@ -93,24 +93,6 @@ fn gen_init_random_seed(dir : &PathBuf) {
     initial_input.to_file(init_seed_path).unwrap();
 }
 
-fn try_run_without_fuzz(qemu : Qemu) -> SnapshotKind {
-    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 50000000,false, false);
-    if cmd == LIBAFL_QEMU_COMMAND_END && sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_END {
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 500000000,false, false);
-        if cmd == LIBAFL_QEMU_COMMAND_END {
-            if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_PREPARE {
-                return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::new_empty());
-            }
-            else if sync_exit_reason == LIBAFL_QEMU_END_SMM_MODULE_START {
-                return SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::new_empty());
-            }
-        }
-        error!("run to next module or smm fuzz error {} {}",cmd, sync_exit_reason);
-        exit_elegantly(ExitProcessType::Error);
-    } 
-    return SnapshotKind::None;
-}
-
 pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, (CmpLogModule, ())), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, OnDiskCorpus<MultipartInput<BytesInput>>>>) -> SnapshotKind 
 {
     let qemu = emulator.qemu();
@@ -129,17 +111,30 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
 
     let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 500000000,false, false);
     if cmd != LIBAFL_QEMU_COMMAND_END || sync_exit_reason != LIBAFL_QEMU_END_SMM_INIT_START {
-        error!("init run to fuzz start error");
-        exit_elegantly(ExitProcessType::Error);
+        exit_elegantly(ExitProcessType::Error("init run to fuzz start error"));
     }
     let snapshot = FuzzerSnapshot::from_qemu(qemu);
-    let try_snapshot = try_run_without_fuzz(qemu);
-    if let SnapshotKind::None = try_snapshot {
-        snapshot.restore_fuzz_snapshot(qemu, true);
-    } else {
+    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 50000000,false, false);
+    if cmd == LIBAFL_QEMU_COMMAND_END && sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_END {
+        let exit_snapshot = FuzzerSnapshot::from_qemu(qemu);
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 500000000,false, false);
+        if cmd == LIBAFL_QEMU_COMMAND_END {
+            if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_PREPARE {
+                snapshot.delete(qemu);
+                return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::new_empty());
+            }
+            else if sync_exit_reason == LIBAFL_QEMU_END_SMM_MODULE_START {
+                snapshot.delete(qemu);
+                return SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::new_empty());
+            }
+        }
+        exit_snapshot.restore_fuzz_snapshot(qemu, true);
         snapshot.delete(qemu);
-        return try_snapshot;
-    }
+        exit_snapshot.delete(qemu);
+        error!("fuzz one module over, run to next module error {:?} pc:{} cmd:{} sync_exit_reason:{}, now replay error",qemu_exit_reason,get_readable_addr(pc), cmd, sync_exit_reason);
+        return SnapshotKind::None;
+    } 
+    snapshot.restore_fuzz_snapshot(qemu, true);
 
     // skip();
     // let try_snapshot = try_run_without_fuzz(qemu);
@@ -288,8 +283,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         state
             .load_initial_inputs_forced(&mut fuzzer, &mut executor, &mut mgr, &[seed_dirs.clone()])
             .unwrap_or_else(|_| {
-                error!("Failed to load initial corpus at {:?}", &seed_dirs);
-                exit_elegantly(ExitProcessType::Error);
+                exit_elegantly(ExitProcessType::Error(&format!("Failed to load initial corpus at {:?}", &seed_dirs)));
             });
             info!("We imported {} inputs from disk.", state.corpus().count());
     }
@@ -337,7 +331,6 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                 }
             }
             exit_snapshot.restore_fuzz_snapshot(qemu, true);
-            error!("fuzz one module over, run to next module error {:?} pc:{} cmd:{} sync_exit_reason:{}, now replay error",qemu_exit_reason,get_readable_addr(pc), cmd, sync_exit_reason);
             exit_snapshot.delete(qemu);
             snapshot.delete(qemu);
             return SnapshotKind::None;
@@ -353,7 +346,6 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
 {
     let qemu = emulator.qemu();
     let cpu = qemu.first_cpu().unwrap();
-    let snapshot = FuzzerSnapshot::from_qemu(qemu);
     unsafe {
         SMM_INIT_FUZZ_EXIT_SNAPSHOT = ptr::null_mut();
         TIMEOUT_TIMES = 0;
@@ -366,12 +358,11 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
     
     let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 500000000,false, false);
     if cmd != LIBAFL_QEMU_COMMAND_END || sync_exit_reason != LIBAFL_QEMU_END_SMM_INIT_START {
-        error!("init run to fuzz start error");
-        exit_elegantly(ExitProcessType::Error);
+        exit_elegantly(ExitProcessType::Error("init run to fuzz start error"));
     }
     
     let snapshot = FuzzerSnapshot::from_qemu(qemu);
-    let _ = try_run_without_fuzz(qemu);
+    let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 50000000,false, false);
     snapshot.restore_fuzz_snapshot(qemu, true);
 
     emulator.modules_mut().first_exec_all();

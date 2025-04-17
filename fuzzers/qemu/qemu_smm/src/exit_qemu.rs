@@ -9,9 +9,9 @@ pub enum SmmQemuExit {
     Crash,  
 }
 
-pub enum ExitProcessType {
-    Ok = 10,
-    Error = 1,
+pub enum ExitProcessType<'a> {
+    Ok,
+    Error(&'a str),
 }
 
 static mut CTRLC_PRESSED : bool = false;
@@ -32,8 +32,13 @@ pub fn exit_elegantly(code : ExitProcessType)
     } else {
         error!("Failed to reset terminal.");
     }
-
-    exit(code as i32);
+    if let ExitProcessType::Error(msg) = code {
+        error!("{}", msg);
+        exit(1);
+    } else {
+        exit(10);
+    }
+    
 }
 
 pub fn setup_ctrlc_handler() {

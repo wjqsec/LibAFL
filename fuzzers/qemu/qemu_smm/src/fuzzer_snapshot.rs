@@ -69,16 +69,14 @@ impl FuzzerSnapshot {
         let dev_filter = DeviceSnapshotFilter::DenyList(get_snapshot_dev_filter_list());
         let ret = qemu.state_save_to_file(&dev_filter,filename.to_str().unwrap());
         if !ret {
-            error!("save state to file error\n");
-            exit_elegantly(ExitProcessType::Error);
+            exit_elegantly(ExitProcessType::Error("save state to file error"));
         }
     }
 
     pub fn restore_from_file(qemu : Qemu, filename : &PathBuf) {
         let ret = qemu.state_restore_from_file(filename.to_str().unwrap());
         if !ret {
-            error!("restore state from file error\n");
-            exit_elegantly(ExitProcessType::Error);
+            exit_elegantly(ExitProcessType::Error("restore state from file error"));
         }
     }
 }

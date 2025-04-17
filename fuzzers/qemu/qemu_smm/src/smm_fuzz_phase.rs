@@ -133,8 +133,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
     if let SnapshotKind::StartOfSmmFuzzSnap(s) = run_to_smm_fuzz_point(qemu, cpu) {
         snapshot = s;
     } else {
-        error!("run to fuzz point error");
-        exit_elegantly(ExitProcessType::Error);
+        exit_elegantly(ExitProcessType::Error("run to fuzz point error"));
     }
     gen_init_random_seed(&seed_dirs);
 
@@ -278,8 +277,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         state
             .load_initial_inputs_forced(&mut fuzzer, &mut executor, &mut mgr, &[seed_dirs.clone()])
             .unwrap_or_else(|_| {
-                error!("Failed to load initial corpus at {:?}", &seed_dirs);
-                exit_elegantly(ExitProcessType::Error);
+                exit_elegantly(ExitProcessType::Error(&format!("Failed to load initial corpus at {:?}", &seed_dirs)));
             });
             info!("We imported {} inputs from disk.", state.corpus().count());
     }
@@ -382,8 +380,7 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
     if let SnapshotKind::StartOfSmmFuzzSnap(s) = run_to_smm_fuzz_point(qemu, cpu) {
         snapshot = s;
     } else {
-        error!("run to fuzz point error");
-        exit_elegantly(ExitProcessType::Error);
+        exit_elegantly(ExitProcessType::Error("run to fuzz point error"));
     }
     emulator.modules_mut().first_exec_all();
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
