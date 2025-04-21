@@ -56,6 +56,7 @@ pub mod transferred;
 #[cfg(feature = "multipart_inputs")]
 #[allow(missing_docs)]
 pub mod stream;
+pub mod crashpc;
 /// Feedbacks evaluate the observers.
 /// Basically, they reduce the information provided by an observer to a value,
 /// indicating the "interestingness" of the last run.

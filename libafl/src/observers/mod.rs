@@ -25,6 +25,7 @@ pub mod map;
 #[cfg(feature = "multipart_inputs")]
 #[allow(missing_docs)]
 pub mod stream;
+pub mod crashpc;
 pub use map::*;
 
 pub mod value;

@@ -6,6 +6,7 @@ use std::str::FromStr;
 use std::{path::PathBuf, process};
 use libafl::corpus::{CorpusId, HasCurrentCorpusId, HasTestcase, Testcase};
 use libafl::events::ProgressReporter;
+use libafl::observers::crashpc;
 use libafl::state::{HasSolutions, HasStartTime};
 use libafl_bolts::math;
 use log::*;
@@ -16,11 +17,11 @@ use std::ptr;
 use serde::{Serialize, Deserialize};
 use libafl::prelude::InMemoryCorpus;
 use libafl::{
-    corpus::Corpus, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{AflMapFeedback, CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, OnDiskCorpus, CachedOnDiskCorpus, PowerQueueScheduler, QueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
+    corpus::Corpus, executors::ExitKind, feedback_or, feedback_or_fast,feedback_and, feedbacks::{AflMapFeedback, CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver, crashpc::CrashpcObserver}, prelude::{powersched::PowerSchedule, OnDiskCorpus, CachedOnDiskCorpus, PowerQueueScheduler, QueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
 };
 use libafl::mutators::Tokens;
 use libafl::corpus::ondisk::*;
-use libafl::feedbacks::stream::StreamFeedback;
+use libafl::feedbacks::{stream::StreamFeedback, crashpc::CrashpcFeedback};
 use libafl::inputs::multi::MultipartInput;
 use std::sync::{Arc, Mutex};
 use std::{error, fs};
@@ -64,6 +65,7 @@ use libafl_bolts::tuples::Merge;
 use libafl::prelude::tokens_mutations;
 use libafl::mutators::I2SRandReplace;
 use std::env;
+
 use crate::stream_input::*;
 use crate::qemu_args::*;
 use crate::common_hooks::*;
@@ -81,6 +83,10 @@ static mut STREAM_OVER_TIMES : u64 = 0;
 static mut ASSERT_TIMES : u64 = 0;
 
 static mut LAST_EXIT_END : bool = false;
+
+static CRASHPC_FEEDBACK : Lazy<Arc<Mutex<String>>> = Lazy::new( || Arc::new(Mutex::new(String::new())));
+
+
 
 const SMI_FUZZ_TIMEOUT_BBL : u64 = 200000;
 
@@ -157,8 +163,23 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
                         LIBAFL_QEMU_END_CRASH => {
                             unsafe {
                                 CRASH_TIMES += 1;
+                                let mut rsp_data_buf : [u8; 8] = [0 ; 8];
+                                unsafe {
+                                    in_cpu.read_mem(arg2,&mut rsp_data_buf);
+                                }
+                                let rsp_data = u64::from_le_bytes(rsp_data_buf);
+
+                                let crashpc1 = get_readable_addr(arg1);
+                                let crashpc2 = get_readable_addr(rsp_data);
+                                if crashpc1.contains(":") {
+                                    CRASHPC_FEEDBACK.lock().unwrap().clone_from(&crashpc1);
+                                } else if crashpc2.contains(":") {
+                                    CRASHPC_FEEDBACK.lock().unwrap().clone_from(&crashpc2);
+                                }
                             }
                             exit_code = ExitKind::Crash;
+                            
+
                         },
                         LIBAFL_QEMU_END_SMM_FUZZ_END => {
                             unsafe {
@@ -194,10 +215,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
                 exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::Crash = qemu_exit_reason {
-                unsafe {
-                    CRASH_TIMES += 1;
-                }
-                exit_code = ExitKind::Crash;
+                exit_code = ExitKind::Ok;
             }
             else if let QemuExitReason::End(_) = qemu_exit_reason {
                 exit_code = ExitKind::Ok;
@@ -227,6 +245,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
     };
     let time_observer = TimeObserver::new("time");
     let stream_observer = StreamObserver::new("stream", unsafe {Arc::clone(&STREAM_FEEDBACK)});
+    let crashpc_observer = CrashpcObserver::new("crashpc", unsafe {Arc::clone(&CRASHPC_FEEDBACK)});
     let cmplog_observer = CmpLogObserver::new("cmplog", true);
     let mut feedback = feedback_or!(
         MaxMapFeedback::new(&edges_observer),
@@ -235,9 +254,8 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         SmiGlobalFoundTimeMetadataFeedback::new(),
     );
     
-    // A feedback to choose if an input is a solution or not
     let mut objective = feedback_or!(
-        CrashFeedback::new(),
+        feedback_and!(CrashFeedback::new(),CrashpcFeedback::new(&crashpc_observer)),
         StreamFeedback::new(&stream_observer),
         SmiGlobalFoundTimeMetadataFeedback::new(),
     );
@@ -264,7 +282,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
     let mut executor = StatefulQemuExecutor::new(
         emulator,
         &mut harness,
-        tuple_list!(edges_observer, time_observer,stream_observer),
+        tuple_list!(edges_observer, time_observer,stream_observer, crashpc_observer),
         &mut fuzzer,
         &mut state,
         &mut mgr,
