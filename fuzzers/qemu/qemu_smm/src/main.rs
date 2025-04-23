@@ -298,7 +298,7 @@ fn fuzz((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf
             })),
         Hook::Empty, 
         Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
-            bbl_common(modules.qemu().first_cpu().unwrap()); 
+            bbl_common(modules.qemu().first_cpu().unwrap(), id); 
         })));
         let mut devread_id : PostDeviceregReadHookId = emulator.modules_mut().devread(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool| {
             let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
@@ -332,7 +332,7 @@ fn fuzz((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf
         })),
         Hook::Empty, 
         Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
-        bbl_common(modules.qemu().first_cpu().unwrap()); 
+        bbl_common(modules.qemu().first_cpu().unwrap(), id); 
         }))
     );
     let mut devread_id : PostDeviceregReadHookId = emulator.modules_mut().devread(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool| {
@@ -414,7 +414,7 @@ fn fuzz((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf
         })),
         Hook::Empty, 
         Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, id: u64| {
-        bbl_common(modules.qemu().first_cpu().unwrap()); 
+        bbl_common(modules.qemu().first_cpu().unwrap(), id); 
         }))
     );
     let mut devread_id : PostDeviceregReadHookId = emulator.modules_mut().devread(Hook::Closure(Box::new(move |modules, _state: Option<&mut _>, base : GuestAddr, offset : GuestAddr,size : usize, data : *mut u8, handled : *mut bool| {

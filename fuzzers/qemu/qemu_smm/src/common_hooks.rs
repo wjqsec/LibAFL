@@ -62,7 +62,7 @@ pub static mut CURRENT_MODULE : Uuid = Uuid::nil();
 static mut CURRENT_SMI_INDEX : u64 = 0;
 static mut CURRENT_SMI_TIMES : u64 = 0;
 
-
+pub static mut LAST_PC : u64 = 0;
 static mut MISSING_PROTOCOLS: Lazy<HashSet<Uuid>> = Lazy::new(|| {
     HashSet::new()
 });
@@ -972,8 +972,9 @@ pub fn set_num_timeout_bbl(bbl : u64) {
 }
 
 
-pub fn bbl_common(cpu : CPU) {
+pub fn bbl_common(cpu : CPU, pc : u64) {
     unsafe {
+        LAST_PC = pc;
         match NEXT_EXIT {
             Some(SmmQemuExit::StreamNotFound) => {
                 NEXT_EXIT = None;
@@ -1049,7 +1050,7 @@ pub fn bbl_debug(cpu : CPU) {
         }
     }
     bbl_exec_cov_record_common(pc);
-    bbl_common(cpu);
+    bbl_common(cpu, pc);
 }
 
 pub fn bbl_debug_info(cpu : CPU) {
@@ -1067,5 +1068,5 @@ pub fn bbl_debug_info(cpu : CPU) {
             info!("[bbl]-> {}",ins);
         }
     }
-    bbl_common(cpu);
+    bbl_common(cpu, pc);
 }

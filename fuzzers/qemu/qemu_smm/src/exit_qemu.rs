@@ -2,6 +2,8 @@ use std::process::{Command, exit};
 use log::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use crate::common_hooks::LAST_PC;
+use crate::coverage::get_readable_addr;
 pub enum SmmQemuExit {
     Timeout,
     StreamNotFound,
@@ -45,6 +47,7 @@ pub fn setup_ctrlc_handler() {
     ctrlc::set_handler(move || {
         unsafe {
             info!("Ctrl C");
+            info!("last pc:{}",get_readable_addr(unsafe{LAST_PC}));
             CTRLC_PRESSED = true;
         }
     }).expect("setup_ctrlc_handler error");
