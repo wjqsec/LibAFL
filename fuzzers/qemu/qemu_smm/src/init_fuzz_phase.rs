@@ -1,9 +1,11 @@
 use core::{ptr::addr_of_mut, time::Duration};
 use std::cell::UnsafeCell;
 use std::fmt::format;
+use std::str::FromStr;
 use std::{path::PathBuf, process};
+use libafl::corpus::Testcase;
 use libafl::state::{HasLastFoundTime, HasStartTime};
-use libafl_bolts::math;
+use libafl_bolts::{math, Named};
 use log::*;
 use uuid::uuid;
 use std::ptr;
@@ -12,7 +14,7 @@ use libafl::{
     corpus::Corpus,Error, executors::ExitKind, feedback_or, feedback_or_fast, feedbacks::{AflMapFeedback, CrashFeedback, MaxMapFeedback, TimeFeedback, TimeoutFeedback}, fuzzer::{Fuzzer, StdFuzzer}, inputs::{BytesInput, Input}, mutators::scheduled::{havoc_mutations, StdScheduledMutator}, observers::{stream::StreamObserver, CanTrack, HitcountsMapObserver, TimeObserver, VariableMapObserver}, prelude::{powersched::PowerSchedule, QueueScheduler, OnDiskCorpus, CachedOnDiskCorpus, InMemoryCorpus, PowerQueueScheduler, SimpleEventManager, SimpleMonitor}, stages::StdMutationalStage, state::{HasCorpus, StdState}
 };
 use libafl::events::ProgressReporter;
-use libafl_bolts::tuples::MatchNameRef;
+use libafl_bolts::tuples::{MatchNameRef, NamedTuple};
 use libafl::feedbacks::stream::StreamFeedback;
 use libafl::inputs::multi::MultipartInput;
 use libafl::prelude::IfStage;
@@ -77,6 +79,8 @@ static mut NOTFOUND_TIMES : u64 = 0;
 
 const INIT_FUZZ_TIMEOUT_BBL : u64 = 500000;
 static mut INIT_FUZZ_TIMEOUT_TIME : u64 = 2 * 60;
+
+static mut LAST_EXIT_END : bool = false;
 
 pub fn set_init_fuzz_timeout_time(sec : u64) {
     unsafe {
@@ -157,6 +161,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         let mut inputs = StreamInputs::from_multiinput(input);
         unsafe {  
             GLOB_INPUT = (&mut inputs) as *mut StreamInputs; 
+            LAST_EXIT_END = false;
         }
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
         // set_fuzz_mem_switch(fuzz_input);
@@ -179,6 +184,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                         },
                         LIBAFL_QEMU_END_SMM_INIT_END => {
                             unsafe {
+                                LAST_EXIT_END = true;
                                 if SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() {
                                     let box_snap = Box::new(FuzzerSnapshot::from_qemu(in_qemu));
                                     SMM_INIT_FUZZ_EXIT_SNAPSHOT = Box::into_raw(box_snap);
@@ -314,6 +320,18 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
             fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &dummy_testcase);
         }
         if unsafe { !SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() } {
+            for i in 0..(state.corpus().last().unwrap().0 + 1) {
+                let testcase_probe = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone();
+                let input_probe = testcase_probe.input().clone().unwrap();
+                fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &input_probe);
+                if unsafe {LAST_EXIT_END} {
+                    let mut good_testcase = Testcase::new(input_probe);
+                    *good_testcase.file_path_mut() = Some(corpus_dir.clone().join("final"));
+                    state.corpus().store_input_from(&good_testcase).unwrap();
+                    fs::copy(testcase_probe.metadata_path().as_ref().unwrap(), corpus_dir.clone().join(".final.metadata")).unwrap();
+                    break;
+                }
+            }
             let exit_snapshot = unsafe { Box::from_raw(SMM_INIT_FUZZ_EXIT_SNAPSHOT) };
             let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3) = qemu_run_once(qemu, &exit_snapshot,8000000000, true, false);
             if let Ok(ref qemu_exit_reason) = qemu_exit_reason {
@@ -364,8 +382,6 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
     }
     
     let snapshot = FuzzerSnapshot::from_qemu(qemu);
-    let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 50000000,false, false);
-    snapshot.restore_fuzz_snapshot(qemu, true);
 
     emulator.modules_mut().first_exec_all();
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
@@ -377,9 +393,6 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
             GLOB_INPUT = (&mut inputs) as *mut StreamInputs; 
         }
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
-        // set_fuzz_mem_switch(fuzz_input);
-
-        
         let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3) = qemu_run_once(in_qemu, &snapshot, INIT_FUZZ_TIMEOUT_BBL,false, true);
         if let Ok(qemu_exit_reason) = qemu_exit_reason
         {
@@ -397,12 +410,7 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
                             }
                         },
                         LIBAFL_QEMU_END_SMM_INIT_END => {
-                            unsafe {
-                                if SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() {
-                                    let box_snap = Box::new(FuzzerSnapshot::from_qemu(in_qemu));
-                                    SMM_INIT_FUZZ_EXIT_SNAPSHOT = Box::into_raw(box_snap);
-                                }
-                            }
+                            
                         },
                         LIBAFL_QEMU_END_CRASH => {
                             unsafe {
@@ -480,38 +488,25 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
     )
     .expect("Failed to create QemuExecutor");
 
-
     let mut ret = Vec::new();
-
-    let mut corpus_inputs = Vec::new();
-    if let Ok(entries) = fs::read_dir(corpus_dir.clone()) {
-        for entry in entries {
-            if let Ok(entry) = entry {
-                let file_name = entry.file_name();
-                let file_name_str = file_name.to_string_lossy();
-                if !file_name_str.starts_with('.') {
-                    let metadata_filename = format!(".{file_name_str}.metadata");
-                    let metadata_fullpath = entry.path().parent().unwrap().join(metadata_filename);
-                    corpus_inputs.push((entry.path().to_str().unwrap().to_string() , metadata_fullpath.to_str().unwrap().to_string(), 0));
-                }
-            }
-        }
-    }
-
-    for input in corpus_inputs.iter_mut() {
-        let contents = fs::read_to_string(input.1.clone()).unwrap();
+    
+    let final_testcase_path = corpus_dir.clone().join("final");
+    let final_metadata_path = corpus_dir.clone().join(".final.metadata");
+    if final_testcase_path.exists() && final_metadata_path.exists() {
+        let input_testcase = MultipartInput::from_file(final_testcase_path).unwrap();
+        let contents = fs::read_to_string(final_metadata_path.clone()).unwrap();
         let config_json : Value = serde_json::from_str(&contents[..]).unwrap();
         let found_time = config_json.get("found_time").unwrap().as_str().unwrap().parse::<u128>().unwrap();
-        input.2 = found_time;
-    }
-    corpus_inputs.sort_by( |a ,b| {
-        a.2.cmp(&b.2)
-    });
-    for input in corpus_inputs.iter() {
-        let input_testcase = MultipartInput::from_file(input.0.clone()).unwrap();
+
         fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input_testcase);
-        ret.push((input.2, num_bbl_covered()));
-        info!("bbl {} {}",input.2, num_bbl_covered());
+        ret.push((found_time, num_bbl_covered()));
+        let total_seconds = found_time / 1_000_000;
+        let hours = total_seconds / 3600;
+        let minutes = (total_seconds % 3600) / 60;
+        let seconds = total_seconds % 60;
+        info!("bbl {}h:{}min:{}s {}",hours,minutes,seconds, num_bbl_covered());
+    } else {
+        let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 50000000,false, false);
     }
     snapshot.delete(qemu);
     return ret;

@@ -7,7 +7,7 @@ use std::io::{self, BufRead};
 use std::fs;
 use std::fs::File;
 use uuid::*;
-
+use std::io::Write;
 struct ModuleCoverage {
     enable_cov : bool,
     start_addr : u64,
@@ -36,6 +36,15 @@ pub fn parse_cov_module_file(filename : &PathBuf) {
                     }
                 } 
             }
+        }
+    }
+}
+
+pub fn overwrite_cov_module_file(filename : &PathBuf) {
+    let mut file = File::create(filename).unwrap();
+    for (guid,cov_info) in  unsafe { BBL_COV.iter() } {
+        if !cov_info.offset.is_empty() && cov_info.enable_cov {
+            writeln!(file, "{}", guid.to_string());
         }
     }
 }

@@ -112,6 +112,9 @@ enum SmmCommand {
         #[arg(short, long)]
         cov_module: Option<String>,
 
+        #[arg(short, long, action = clap::ArgAction::SetTrue)]
+        overwrite_effective_cov_module: bool,
+
         #[arg(short, long)]
         output: Option<String>,
 
@@ -202,11 +205,15 @@ fn main() {
             }
             replay((&seed_path, &corpus_path, &crash_path, &snapshot_path), PathBuf::from_str(inputs.clone().as_str()).unwrap());
         },
-        SmmCommand::Coverage {cov_module, output ,include_init_phase} => {
-            if let Some(cov_module) = cov_module {
-                parse_cov_module_file(&PathBuf::from_str(cov_module.as_str()).unwrap());
+        SmmCommand::Coverage {cov_module,overwrite_effective_cov_module,  output ,include_init_phase} => {
+            if let Some(cov_module) = cov_module.clone() {
+                parse_cov_module_file(&PathBuf::from_str(cov_module.clone().as_str()).unwrap());
             }
             coverage((&seed_path, &corpus_path, &crash_path, &snapshot_path),output, include_init_phase);  
+            if overwrite_effective_cov_module && cov_module.is_some() {
+                overwrite_cov_module_file(&PathBuf::from_str(cov_module.unwrap().as_str()).unwrap());
+            }
+            exit_elegantly(ExitProcessType::Ok);
         },
         SmmCommand::Report { } => {
             report((&seed_path, &corpus_path, &crash_path, &snapshot_path));
@@ -643,7 +650,7 @@ fn coverage((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &Pat
             writeln!(file, "{} {}", time, bbl);
         }
     }
-    exit_elegantly(ExitProcessType::Ok);
+    
 }
 
 fn report((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf, &PathBuf, &PathBuf)) {
