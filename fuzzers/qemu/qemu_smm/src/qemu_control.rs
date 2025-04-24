@@ -28,7 +28,7 @@ fn post_fuzz_input_process() {
     }
 }
 
-pub fn qemu_run_once(mut qemu : Qemu, snapshot : & FuzzerSnapshot, timeout : u64, restore_whole_fuzz_snapshot : bool, fuzz : bool) -> (Result<QemuExitReason, libafl_qemu::QemuExitError>, GuestReg, GuestReg, GuestReg, GuestReg, GuestReg) {
+pub fn qemu_run_once(mut qemu : Qemu, snapshot : & FuzzerSnapshot, timeout : u64, restore_whole_fuzz_snapshot : bool, fuzz : bool) -> (Result<QemuExitReason, libafl_qemu::QemuExitError>, GuestReg, GuestReg, GuestReg, GuestReg, GuestReg, GuestReg) {
     unsafe {
         let cpu = qemu.first_cpu().unwrap();
         set_exec_count(0);
@@ -47,6 +47,7 @@ pub fn qemu_run_once(mut qemu : Qemu, snapshot : & FuzzerSnapshot, timeout : u64
         let sync_exit_reason : GuestReg = cpu.read_reg(Regs::Rdi).unwrap();
         let arg1 : GuestReg = cpu.read_reg(Regs::Rsi).unwrap();
         let arg2 : GuestReg = cpu.read_reg(Regs::Rdx).unwrap();
-        (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2)
+        let arg3 : GuestReg = cpu.read_reg(Regs::Rcx).unwrap();
+        (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3)
     }
 }

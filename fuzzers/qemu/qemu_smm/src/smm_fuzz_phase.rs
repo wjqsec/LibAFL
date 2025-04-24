@@ -116,7 +116,7 @@ fn add_uefi_fuzz_token(state : &mut StdState<MultipartInput<BytesInput>, CachedO
 
 fn run_to_smm_fuzz_point(qemu : Qemu, cpu : CPU) -> SnapshotKind {
     // run to the start cause we are now at the start of the smm fuzz driver
-    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),10000000000, true, false);
+    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),10000000000, true, false);
     if let Ok(ref qemu_exit_reason) = qemu_exit_reason {
         if let QemuExitReason::SyncExit = qemu_exit_reason {
             if cmd == LIBAFL_QEMU_COMMAND_END {
@@ -153,7 +153,7 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu: CPU = in_qemu.first_cpu().unwrap();
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, SMI_FUZZ_TIMEOUT_BBL,false, true);
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3) = qemu_run_once(in_qemu, &snapshot, SMI_FUZZ_TIMEOUT_BBL,false, true);
         let exit_code;
         if let Ok(qemu_exit_reason) = qemu_exit_reason
         {
@@ -409,7 +409,7 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
         let in_simulator = state.emulator_mut();
         let in_qemu: Qemu = in_simulator.qemu();
         let in_cpu = in_qemu.first_cpu().unwrap();
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, SMI_FUZZ_TIMEOUT_BBL,false, true);
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3) = qemu_run_once(in_qemu, &snapshot, SMI_FUZZ_TIMEOUT_BBL,false, true);
         let exit_code;
         let rsp : GuestReg = in_cpu.read_reg(Regs::Rsp).unwrap();
         if let Ok(qemu_exit_reason) = qemu_exit_reason
@@ -425,7 +425,7 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
                                 in_cpu.read_mem(arg2,&mut rsp_data_buf);
                             }
                             let rsp_data = u64::from_le_bytes(rsp_data_buf);
-                            info!("exit crash pc:{} rsp:{:#x} [rsp]:{}",get_readable_addr(arg1), arg2, get_readable_addr(rsp_data));
+                            info!("exit crash pc:{} rsp:{:#x} [rsp]:{} [cr2]:{:#x}",get_readable_addr(arg1), arg2, get_readable_addr(rsp_data),arg3);
                         },
                         LIBAFL_QEMU_END_SMM_FUZZ_END => {
                             unsafe {END_TIMES += 1;}
@@ -560,7 +560,11 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
                 let input_testcase = MultipartInput::from_file(input.0.clone()).unwrap();
                 info!("exec input {}",input.0.clone());
                 fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input_testcase);
-                info!("bbl {} {}",input.3, num_bbl_covered());
+                let total_seconds = input.3 / 1_000_000;
+                let hours = total_seconds / 3600;
+                let minutes = (total_seconds % 3600) / 60;
+                let seconds = total_seconds % 60;
+                info!("bbl {}h:{}min:{}s {}",hours,minutes,seconds, num_bbl_covered());
                 ret.push((input.3, num_bbl_covered()));
                 if ctrlc_pressed() {
                     exit_elegantly(ExitProcessType::Ok);

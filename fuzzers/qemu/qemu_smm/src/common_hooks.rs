@@ -412,13 +412,13 @@ pub fn pre_memrw_smm_fuzz_phase_debug(pc : GuestReg, addr : GuestAddr, size : u6
     if unsafe {IN_SMI == true} {
         if rw == 0 {
             if fuzz_value_used {
-                debug!("[mem] pc:{} {} addr:{:#x} size:{} value:{:#x}",get_readable_addr(pc), "read", addr, size, unsafe {*DUMMY_MEMORY_HOST_PTR});
+                debug!("[mem] pc:{} {} addr:{:#x} size:{} fuzz_value:{:#x}",get_readable_addr(pc), "read", addr, size, unsafe {*DUMMY_MEMORY_HOST_PTR});
             } else {
                 let mut mem_data : [u8; 8] = [0 ; 8];
                 unsafe {
                     cpu.read_mem(addr,&mut mem_data);
                 }
-                debug!("[mem] pc:{} {} addr:{:#x} size:{} value:{:#x}",get_readable_addr(pc), "read", addr, size, u64::from_le_bytes(mem_data));
+                debug!("[mem] pc:{} {} addr:{:#x} size:{} raw_value:{:#x}",get_readable_addr(pc), "read", addr, size, u64::from_le_bytes(mem_data));
             }
             
         } else {
@@ -555,7 +555,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                     current_group_index = group_index;
                 },
                 Err(io_err) => {    
-                    exit_elegantly(ExitProcessType::Error("smi group index data get error"));
+                    exit_elegantly(ExitProcessType::Error(&format!("smi group index data get error {}", io_err)));
                 }
             }   
             match fuzz_input.get_smi_select_info_fuzz_data() {
@@ -767,6 +767,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
         LIBAFL_QEMU_COMMAND_SMM_GET_SAVE_REGISTER_FUZZ_DATA => {
             let addr = arg1;
             let reg_size = arg2;
+            let mut data = [0u8; 16];
             if unsafe { IN_SMI && IN_FUZZ } {
                 ret = 1;
                 if reg_size != 0 {
@@ -774,6 +775,9 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                         Ok((fuzz_input_ptr)) => { 
                             unsafe {
                                 cpu.write_mem(addr, slice::from_raw_parts(fuzz_input_ptr, reg_size as usize));
+                                let len = min(16, reg_size) as usize;
+                                data[..len].copy_from_slice(&slice::from_raw_parts(fuzz_input_ptr, reg_size as usize)[..len]);
+                                debug!("[save_reg] {:#x}",u128::from_le_bytes(data));
                             }
                         },
                         Err(io_err) => {    
@@ -784,6 +788,9 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                         Ok((fuzz_input_ptr)) => { 
                                             unsafe {
                                                 cpu.write_mem(addr, slice::from_raw_parts(fuzz_input_ptr, reg_size as usize));
+                                                let len = min(16, reg_size) as usize;
+                                                data[..len].copy_from_slice(&slice::from_raw_parts(fuzz_input_ptr, reg_size as usize)[..len]);
+                                                debug!("[save_reg] {:#x}",u128::from_le_bytes(data));
                                             }
                                         },
                                         _ => {    
@@ -795,6 +802,9 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                     let append_data = fuzz_input.append_temp_stream(id, need_len);
                                     unsafe {
                                         cpu.write_mem(addr, append_data.as_slice());
+                                        let len = min(16, reg_size) as usize;
+                                        data[..len].copy_from_slice(&append_data.as_slice()[..len]);
+                                        debug!("[save_reg] {:#x}",u128::from_le_bytes(data));
                                     }
                                 },
                                 _ => {

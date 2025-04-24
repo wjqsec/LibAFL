@@ -109,15 +109,15 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
     unskip();
     gen_init_random_seed(&seed_dirs);
 
-    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 500000000,false, false);
+    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 500000000,false, false);
     if cmd != LIBAFL_QEMU_COMMAND_END || sync_exit_reason != LIBAFL_QEMU_END_SMM_INIT_START {
         exit_elegantly(ExitProcessType::Error("init run to fuzz start error"));
     }
     let snapshot = FuzzerSnapshot::from_qemu(qemu);
-    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 50000000,false, false);
+    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 50000000,false, false);
     if cmd == LIBAFL_QEMU_COMMAND_END && sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_END {
         let exit_snapshot = FuzzerSnapshot::from_qemu(qemu);
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 500000000,false, false);
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 500000000,false, false);
         if cmd == LIBAFL_QEMU_COMMAND_END {
             if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_PREPARE {
                 exit_snapshot.delete(qemu);
@@ -161,7 +161,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         let fuzz_input = unsafe {&mut (*GLOB_INPUT) };
         // set_fuzz_mem_switch(fuzz_input);
         
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, INIT_FUZZ_TIMEOUT_BBL,false, true);
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3) = qemu_run_once(in_qemu, &snapshot, INIT_FUZZ_TIMEOUT_BBL,false, true);
         if let Ok(qemu_exit_reason) = qemu_exit_reason
         {
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
@@ -315,7 +315,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         }
         if unsafe { !SMM_INIT_FUZZ_EXIT_SNAPSHOT.is_null() } {
             let exit_snapshot = unsafe { Box::from_raw(SMM_INIT_FUZZ_EXIT_SNAPSHOT) };
-            let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &exit_snapshot,8000000000, true, false);
+            let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3) = qemu_run_once(qemu, &exit_snapshot,8000000000, true, false);
             if let Ok(ref qemu_exit_reason) = qemu_exit_reason {
                 if let QemuExitReason::SyncExit = qemu_exit_reason {
                     if cmd == LIBAFL_QEMU_COMMAND_END {
@@ -358,7 +358,7 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
         NOTFOUND_TIMES = 0;
     }
     
-    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 500000000,false, false);
+    let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 500000000,false, false);
     if cmd != LIBAFL_QEMU_COMMAND_END || sync_exit_reason != LIBAFL_QEMU_END_SMM_INIT_START {
         exit_elegantly(ExitProcessType::Error("init run to fuzz start error"));
     }
@@ -380,7 +380,7 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
         // set_fuzz_mem_switch(fuzz_input);
 
         
-        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2) = qemu_run_once(in_qemu, &snapshot, INIT_FUZZ_TIMEOUT_BBL,false, true);
+        let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3) = qemu_run_once(in_qemu, &snapshot, INIT_FUZZ_TIMEOUT_BBL,false, true);
         if let Ok(qemu_exit_reason) = qemu_exit_reason
         {
             if let QemuExitReason::SyncExit = qemu_exit_reason  {
