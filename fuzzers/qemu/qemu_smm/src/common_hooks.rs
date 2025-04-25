@@ -409,7 +409,7 @@ pub fn pre_memrw_smm_fuzz_phase_debug(pc : GuestReg, addr : GuestAddr, size : u6
 {
     let pc = cpu.read_reg(Regs::Rip).unwrap();
     let fuzz_value_used = pre_memrw_smm_fuzz_phase(pc, addr, size, out_addr, rw, val, fuzz_input, cpu);
-    if unsafe {IN_SMI == true && IN_FUZZ == true} {
+    if unsafe {IN_FUZZ == true} {
         if rw == 0 {
             if fuzz_value_used {
                 debug!("[mem] pc:{} {} addr:{:#x} size:{} fuzz_value:{:#x}",get_readable_addr(pc), "read", addr, size, unsafe {*DUMMY_MEMORY_HOST_PTR});
