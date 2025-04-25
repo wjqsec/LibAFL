@@ -846,8 +846,8 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 unsafe {
                     CURRENT_MODULE = module_guid.clone();
                 }
+                module_range(&module_guid, start_addr, end_addr);
                 if cmd == LIBAFL_QEMU_COMMAND_SMM_REPORT_SMM_MODULE_INFO {
-                    module_range(&module_guid, start_addr, end_addr);
                     info!("[Module_SMM] {} {:#x}-{:#x}", module_guid.to_string(), start_addr, end_addr);
                 } else {
                     info!("[Module_DXE] {} {:#x}-{:#x}", module_guid.to_string(), start_addr, end_addr);
