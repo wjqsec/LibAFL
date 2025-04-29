@@ -112,8 +112,8 @@ enum SmmCommand {
         #[arg(short, long)]
         cov_module: Option<String>,
 
-        #[arg(short, long, action = clap::ArgAction::SetTrue)]
-        overwrite_effective_cov_module: bool,
+        #[arg(short, long)]
+        effective_cov_module: Option<String>,
 
         #[arg(short, long)]
         output: Option<String>,
@@ -205,13 +205,13 @@ fn main() {
             }
             replay((&seed_path, &corpus_path, &crash_path, &snapshot_path), PathBuf::from_str(inputs.clone().as_str()).unwrap());
         },
-        SmmCommand::Coverage {cov_module,overwrite_effective_cov_module,  output ,include_init_phase} => {
+        SmmCommand::Coverage {cov_module,effective_cov_module,  output ,include_init_phase} => {
             if let Some(cov_module) = cov_module.clone() {
                 parse_cov_module_file(&PathBuf::from_str(cov_module.clone().as_str()).unwrap());
             }
             coverage((&seed_path, &corpus_path, &crash_path, &snapshot_path),output, include_init_phase);  
-            if overwrite_effective_cov_module && cov_module.is_some() {
-                overwrite_cov_module_file(&PathBuf::from_str(cov_module.unwrap().as_str()).unwrap());
+            if let Some(effective_cov_module) = effective_cov_module {
+                overwrite_cov_module_file(&PathBuf::from_str(effective_cov_module.as_str()).unwrap());
             }
             exit_elegantly(ExitProcessType::Ok);
         },

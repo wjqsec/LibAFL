@@ -611,7 +611,8 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                 Ok((fuzz_input_ptr,  claimed_len, actual_len)) => { 
                     let written_len = min(unsafe {COMMBUF_SIZE} as usize, actual_len);
                     unsafe { 
-                        COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, written_len); 
+                        cpu.write_mem(COMMBUF_ADDR, slice::from_raw_parts(fuzz_input_ptr, written_len));
+                        // COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, written_len); 
                         COMMBUF_ACTUAL_SIZE = written_len as u64;
                     }
                     ret = claimed_len as u64;
@@ -624,7 +625,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                 Ok((fuzz_input_ptr, claimed_len, actual_len)) => { 
                                     let written_len = min(unsafe {COMMBUF_SIZE} as usize, actual_len);
                                     unsafe { 
-                                        COMMBUF_HOST_PTR.copy_from(fuzz_input_ptr, written_len); 
+                                        cpu.write_mem(COMMBUF_ADDR, slice::from_raw_parts(fuzz_input_ptr, written_len));
                                         COMMBUF_ACTUAL_SIZE = written_len as u64;
                                     }
                                     ret = claimed_len as u64;
