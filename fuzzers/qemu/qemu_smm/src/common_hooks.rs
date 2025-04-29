@@ -189,7 +189,7 @@ fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut 
                     }
                 },
                 _ => {
-                    exit_elegantly(ExitProcessType::Error("io stream get error"));
+                    error!("{}",io_err);
                 }
             }
         }
@@ -321,7 +321,7 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
                             }
                         },
                         _ => {
-                            exit_elegantly(ExitProcessType::Error("dram fuzz data get error"));
+                            error!("{}",io_err);
                         },
                     }
                 }
@@ -647,10 +647,9 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                 unsafe {
                                     cpu.write_mem(addr, append_data.as_slice());
                                 }
-                                
                             },
                             _ => {
-                                exit_elegantly(ExitProcessType::Error("pcd data get error"));
+                                error!("{}",io_err);
                             },
                         }
                     }
@@ -725,13 +724,10 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                             },
                             StreamError::StreamOutof(id, need_len) => {
                                 ret = 0;
-                                // let append_data = fuzz_input.append_temp_stream(id, need_len);
-                                // unsafe {
-                                //     cpu.write_mem(addr, append_data.as_slice());
-                                // }
                             },
                             _ => {
-                                exit_elegantly(ExitProcessType::Error("variable data get error"));
+                                ret = 0;
+                                error!("{}",io_err);
                             },
                         }
                     }
@@ -784,7 +780,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                     }
                                 },
                                 _ => {
-                                    exit_elegantly(ExitProcessType::Error("save register data get error"));
+                                    error!("{}",io_err);
                                 },
                             }
                         }

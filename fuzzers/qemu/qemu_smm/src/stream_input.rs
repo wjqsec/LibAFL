@@ -309,7 +309,7 @@ impl StreamInputs {
         }
     }
     pub fn get_io_fuzz_data(&mut self, pc : u64, addr : u64, len : u64) -> Result<(*const u8), StreamError> {
-        if len > 4 {
+        if len > 8 {
             return Err(StreamError::LargeDatasize(len));
         }
         let stream_info = StreamInfo::new_io_stream(pc, addr);
@@ -491,6 +491,9 @@ impl StreamInputs {
         }
     }
     pub fn get_variable_fuzz_data(&mut self, len : u64) -> Result<(*const u8), StreamError> {
+        if len > 1024 {
+            return Err(StreamError::LargeDatasize(len));
+        }
         let stream_info = StreamInfo::new_variable_stream();
         match self.inputs.entry(stream_info.get_id()) {
             std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -523,6 +526,9 @@ impl StreamInputs {
         }
     }
     pub fn get_save_register_fuzz_data(&mut self, len : u64) -> Result<(*const u8), StreamError> {
+        if len > 64 {
+            return Err(StreamError::LargeDatasize(len));
+        }
         let stream_info = StreamInfo::new_save_register_stream();
         match self.inputs.entry(stream_info.get_id()) {
             std::collections::btree_map::Entry::Occupied(mut entry) => {
