@@ -414,7 +414,7 @@ impl StreamInputs {
             },
         }
     }
-    fn get_unconsistent_dram_fuzz_data(&mut self, addr : u64, len : u64, smi_index : u64, smi_times : u64) -> Result<u64, StreamError> {
+    fn get_unconsistent_dram_fuzz_data(&mut self, addr : u64, len : u64, smi_index : u64, smi_times : u64) -> Result<(*const u8), StreamError> {
         if len > 16 {
             return Err(StreamError::LargeDatasize(len));
         }
@@ -422,11 +422,7 @@ impl StreamInputs {
         match self.inputs.entry(stream_info.get_id()) {
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 if let Some(fuzz_input_ptr) = entry.get_mut().get_input_len_ptr(len as usize) {
-                    let mut data : u64 = 0;
-                    for i in 0..(len as usize) {
-                        data = (data << 8) | unsafe { (*fuzz_input_ptr.add(i)) as u64 };
-                    }
-                    return Ok(data);
+                    return Ok(fuzz_input_ptr);
                 }
                 else {
                     return Err(StreamError::StreamOutof(stream_info, len as usize));
@@ -474,12 +470,8 @@ impl StreamInputs {
             },
         }
     }
-    pub fn get_dram_fuzz_data(&mut self, addr : u64, len : u64, consistent : bool, smi_index : u64, smi_times : u64) -> Result<u64, StreamError> {
-        if consistent {
-            self.get_consistent_dram_fuzz_data(addr, len, smi_index, smi_times)
-        } else {
-            self.get_unconsistent_dram_fuzz_data(addr, len, smi_index, smi_times)
-        }
+    pub fn get_dram_fuzz_data(&mut self, addr : u64, len : u64, smi_index : u64, smi_times : u64) -> Result<(*const u8), StreamError> {
+        self.get_unconsistent_dram_fuzz_data(addr, len, smi_index, smi_times)
     }
 
     pub fn get_fuzz_mem_switch_fuzz_data(&mut self) -> Result<u8, StreamError> {
