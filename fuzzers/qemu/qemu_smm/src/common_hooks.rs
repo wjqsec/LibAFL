@@ -59,7 +59,10 @@ pub static mut CURRENT_MODULE : Uuid = Uuid::nil();
 static mut CURRENT_SMI_INDEX : u64 = 0;
 static mut CURRENT_SMI_TIMES : u64 = 0;
 
-pub static mut LAST_PC : u64 = 0;
+
+pub static mut LAST_INS: Lazy<String> = Lazy::new(|| {
+    String::new()
+});
 static mut MISSING_PROTOCOLS: Lazy<HashSet<Uuid>> = Lazy::new(|| {
     HashSet::new()
 });
@@ -145,7 +148,7 @@ fn cpuid_common(in_eax: u32, out_eax: *mut u32,out_ebx: *mut u32, out_ecx: *mut 
                     }
                 },
                 _ => {
-                    exit_elegantly(ExitProcessType::Error("cpuid stream get error"));
+                    exit_elegantly(ExitProcessType::Error(&format!("cpuid_common {}", io_err)));
                 }
             }
         }
@@ -189,7 +192,10 @@ fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut 
                     }
                 },
                 _ => {
-                    error!("{}",io_err);
+                    unsafe {
+                        NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+                    }
+                    debug!("post_io_read_common {}",io_err);
                 }
             }
         }
@@ -202,7 +208,10 @@ fn post_io_read_common(pc : u64, io_addr : GuestAddr, size : usize, data : *mut 
         4 => unsafe { *( data as *mut u32) as u64},
         8 => unsafe { *( data as *mut u64) as u64},
         _ => {
-            exit_elegantly(ExitProcessType::Error(&format!("post_io_read size error {:#x}!",size)));
+            unsafe {
+                NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+            }
+            debug!("post_io_read size error {:#x}!",size);
             0
         },
         
@@ -248,7 +257,10 @@ fn pre_io_write_common(base : GuestAddr, offset : GuestAddr,size : usize, data :
         4 => unsafe { *( data as *mut u32) as u64},
         8 => unsafe { *( data as *mut u64) as u64},
         _ => {
-            exit_elegantly(ExitProcessType::Error(&format!("pre_io_write size error {:#x}!",size)));
+            unsafe {
+                NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+            }
+            debug!("pre_io_write size error {:#x}!",size);
             0
         },
     };
@@ -308,7 +320,7 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
                                         *out_addr = DUMMY_MEMORY_ADDR;
                                     }
                                 },
-                                Err(io_err) => {    
+                                _ => {    
                                     exit_elegantly(ExitProcessType::Error("dram fuzz data generate error"));
                                 }
                             }
@@ -318,10 +330,14 @@ fn pre_memrw_common(pc : GuestReg, addr : GuestAddr, size : u64 , out_addr : *mu
                             unsafe {
                                 cpu.write_mem(DUMMY_MEMORY_ADDR, append_data.as_slice());
                                 *out_addr = DUMMY_MEMORY_ADDR;
+                                NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
                             }
                         },
                         _ => {
-                            error!("{}",io_err);
+                            unsafe {
+                                NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+                            }
+                            debug!("pre_memrw_common {}",io_err);
                         },
                     }
                 }
@@ -649,7 +665,10 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                 }
                             },
                             _ => {
-                                error!("{}",io_err);
+                                unsafe {
+                                    NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+                                }
+                                debug!("get pcd {}",io_err);
                             },
                         }
                     }
@@ -717,7 +736,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                         }
                                     },
                                     _ => {    
-                                        error!("variable data generate error, request too much variable data {:}",var_size);
+                                        debug!("variable data generate error, request too much variable data {}",var_size);
                                         ret = 0;
                                     }
                                 }
@@ -726,8 +745,11 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                 ret = 0;
                             },
                             _ => {
+                                unsafe {
+                                    NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+                                }
                                 ret = 0;
-                                error!("{}",io_err);
+                                debug!("get variable {}",io_err);
                             },
                         }
                     }
@@ -780,7 +802,10 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                     }
                                 },
                                 _ => {
-                                    error!("{}",io_err);
+                                    unsafe {
+                                        NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+                                    }
+                                    debug!("save reg {}",io_err);
                                 },
                             }
                         }
@@ -940,7 +965,10 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             }
         },
         _ => { 
-            exit_elegantly(ExitProcessType::Error(&format!("backdoor wrong cmd {:}",cmd)));
+            unsafe {
+                NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
+            }
+            debug!("backdoor wrong cmd {:}",cmd);
         },
     };
     cpu.write_reg(Regs::Rax,ret).unwrap();
@@ -956,7 +984,17 @@ pub fn set_num_timeout_bbl(bbl : u64) {
 
 pub fn bbl_common(cpu : CPU, pc : u64) {
     unsafe {
-        LAST_PC = pc;
+        // let pc_ins = get_readable_addr(pc);
+        // if pc_ins.contains(":") {
+        //     unsafe {
+        //         LAST_INS.clone_from(&pc_ins);
+        //     }
+        // } else {
+        //     let pc_inss = disassemble_raw_instruction(cpu, pc);
+        //     unsafe {
+        //         LAST_INS.clone_from(&pc_inss.join(""));
+        //     }
+        // }
         match NEXT_EXIT {
             Some(SmmQemuExit::StreamNotFound) => {
                 NEXT_EXIT = None;
