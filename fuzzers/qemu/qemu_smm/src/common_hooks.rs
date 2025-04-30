@@ -665,10 +665,7 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                 }
                             },
                             _ => {
-                                unsafe {
-                                    NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
-                                }
-                                debug!("get pcd {}",io_err);
+                                exit_elegantly(ExitProcessType::Error(&format!("get pcd {}", io_err)));
                             },
                         }
                     }
@@ -745,9 +742,6 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
                                 ret = 0;
                             },
                             _ => {
-                                unsafe {
-                                    NEXT_EXIT = Some(SmmQemuExit::StreamOutof);
-                                }
                                 ret = 0;
                                 debug!("get variable {}",io_err);
                             },

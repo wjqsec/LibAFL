@@ -88,7 +88,7 @@ static CRASHPC_FEEDBACK : Lazy<Arc<Mutex<String>>> = Lazy::new( || Arc::new(Mute
 
 
 
-const SMI_FUZZ_TIMEOUT_BBL : u64 = 200000;
+const SMI_FUZZ_TIMEOUT_BBL : u64 = 100000;
 
 fn gen_init_random_seed(dir : &PathBuf) {
     for i in 0..get_num_smi_group() {
