@@ -140,7 +140,6 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         exit_snapshot.restore_fuzz_snapshot(qemu, true);
         snapshot.delete(qemu);
         exit_snapshot.delete(qemu);
-        error!("fuzz one module over, run to next module error {:?} pc:{} cmd:{} sync_exit_reason:{}, now replay error",qemu_exit_reason,get_readable_addr(pc), cmd, sync_exit_reason);
         return SnapshotKind::None;
     } 
     snapshot.restore_fuzz_snapshot(qemu, true);
