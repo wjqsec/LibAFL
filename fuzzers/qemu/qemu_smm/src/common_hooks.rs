@@ -59,6 +59,7 @@ pub static mut CURRENT_MODULE : Uuid = Uuid::nil();
 static mut CURRENT_SMI_INDEX : u64 = 0;
 static mut CURRENT_SMI_TIMES : u64 = 0;
 
+pub static mut LAST_SMI_ADDR : u64 = 0;
 
 pub static mut LAST_INS: Lazy<String> = Lazy::new(|| {
     String::new()
@@ -694,16 +695,10 @@ pub fn backdoor_common(fuzz_input : &mut StreamInputs, cpu : CPU)
             }
             let guid_addr = arg1;
             let target_addr = arg2;
-            if guid_addr == 0 {
-                debug!("[backdoor] SMI enter root handler {}", get_readable_addr(target_addr));
-            } else {
-                let mut guid_buf : [u8; 16] = [0 ; 16];
-                unsafe {
-                    cpu.read_mem(guid_addr,&mut guid_buf);
-                }
-                let handler_guid = Uuid::from_bytes_le(guid_buf);
-                debug!("[backdoor] SMI enter {} {}", handler_guid.to_string(), get_readable_addr(target_addr));
+            unsafe {
+                LAST_SMI_ADDR = target_addr;
             }
+            debug!("[backdoor] SMI enter handler {}", get_readable_addr(target_addr));
         },
         LIBAFL_QEMU_COMMAND_SMM_SMI_EXIT => {
             unsafe {
