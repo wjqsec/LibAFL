@@ -38,6 +38,7 @@ pub fn exit_elegantly(code : ExitProcessType)
         error!("{}", msg);
         exit(1);
     } else {
+        info!("exit ok");
         exit(10);
     }
     

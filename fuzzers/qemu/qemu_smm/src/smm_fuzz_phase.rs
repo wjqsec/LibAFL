@@ -312,29 +312,29 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         exit_elegantly(ExitProcessType::Ok);
     }
 
-    for i in 0..(state.corpus().last().unwrap().0 + 1) {
-        let testcase = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone();
-        let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
-        let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
-        smi_group_info_to_file(&smi_metadata_fullpath);
-    }
-    if state.solutions().last().is_some() {
-        for i in 0..(state.solutions().last().unwrap().0 + 1) {
-            let testcase = state.solutions().get(CorpusId::from(i)).unwrap().clone().take().clone();
-            let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
-            let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
-            smi_group_info_to_file(&smi_metadata_fullpath);
-        }
-    }
+    // for i in 0..(state.corpus().last().unwrap().0 + 1) {
+    //     let testcase = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone();
+    //     let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
+    //     let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
+    //     smi_group_info_to_file(&smi_metadata_fullpath);
+    // }
+    // if state.solutions().last().is_some() {
+    //     for i in 0..(state.solutions().last().unwrap().0 + 1) {
+    //         let testcase = state.solutions().get(CorpusId::from(i)).unwrap().clone().take().clone();
+    //         let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
+    //         let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
+    //         smi_group_info_to_file(&smi_metadata_fullpath);
+    //     }
+    // }
 
 
-    for i in 0..( state.corpus().last().unwrap().0 + 1) {
-        let input = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone().input().clone().unwrap();
-        fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &input);
-        if unsafe {LAST_EXIT_END} {
-            let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),30000000, false, false);   
-        }
-    }
+    // for i in 0..( state.corpus().last().unwrap().0 + 1) {
+    //     let input = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone().input().clone().unwrap();
+    //     fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &input);
+    //     if unsafe {LAST_EXIT_END} {
+    //         let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),30000000, false, false);   
+    //     }
+    // }
 
     loop {
         let num_corpus = state.corpus().last().unwrap().0;
@@ -344,30 +344,30 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
         }
         fuzzer.fuzz_one(&mut stages, &mut shadow_executor, &mut state, &mut mgr).unwrap();
         mgr.maybe_report_progress(&mut state, Duration::from_secs(60));
-        for i in num_corpus..(state.corpus().last().unwrap().0 + 1) {
-            let testcase = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone();
-            let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
-            let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
-            smi_group_info_to_file(&smi_metadata_fullpath);
-        }
+        // for i in num_corpus..(state.corpus().last().unwrap().0 + 1) {
+        //     let testcase = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone();
+        //     let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
+        //     let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
+        //     smi_group_info_to_file(&smi_metadata_fullpath);
+        // }
 
-        if num_solutions.is_some() {
-            for i in num_solutions.unwrap()..(state.solutions().last().unwrap().0 + 1) {
-                let testcase = state.solutions().get(CorpusId::from(i)).unwrap().clone().take().clone();
-                let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
-                let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
-                smi_group_info_to_file(&smi_metadata_fullpath);
-            }
-        } else {
-            if let Some(end_num_solutions) = state.solutions().last() {
-                for i in 0..(end_num_solutions.0 + 1) {
-                    let testcase = state.solutions().get(CorpusId::from(i)).unwrap().clone().take().clone();
-                    let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
-                    let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
-                    smi_group_info_to_file(&smi_metadata_fullpath);
-                }
-            }
-        }
+        // if num_solutions.is_some() {
+        //     for i in num_solutions.unwrap()..(state.solutions().last().unwrap().0 + 1) {
+        //         let testcase = state.solutions().get(CorpusId::from(i)).unwrap().clone().take().clone();
+        //         let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
+        //         let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
+        //         smi_group_info_to_file(&smi_metadata_fullpath);
+        //     }
+        // } else {
+        //     if let Some(end_num_solutions) = state.solutions().last() {
+        //         for i in 0..(end_num_solutions.0 + 1) {
+        //             let testcase = state.solutions().get(CorpusId::from(i)).unwrap().clone().take().clone();
+        //             let smi_metadata_filename = format!(".{}.smi_metadata",testcase.filename().clone().unwrap());
+        //             let smi_metadata_fullpath = PathBuf::from(testcase.file_path().clone().unwrap()).parent().unwrap().join(smi_metadata_filename.clone());
+        //             smi_group_info_to_file(&smi_metadata_fullpath);
+        //         }
+        //     }
+        // }
         if ctrlc_pressed() {
             exit_elegantly(ExitProcessType::Ok);
         }
@@ -377,13 +377,13 @@ pub fn smm_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir :
                 break;
             }
         }
-        for i in num_corpus..( state.corpus().last().unwrap().0 + 1) {
-            let input = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone().input().clone().unwrap();
-            fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &input);
-            if unsafe {LAST_EXIT_END} {
-                let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),30000000, false, false);   
-            }
-        }
+        // for i in num_corpus..( state.corpus().last().unwrap().0 + 1) {
+        //     let input = state.corpus().get(CorpusId::from(i)).unwrap().clone().take().clone().input().clone().unwrap();
+        //     fuzzer.execute_input(&mut state, &mut shadow_executor, &mut mgr, &input);
+        //     if unsafe {LAST_EXIT_END} {
+        //         let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),30000000, false, false);   
+        //     }
+        // }
     }
 
 } 
@@ -540,9 +540,10 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
                             let metadata_filename = format!(".{file_name_str}.metadata");
                             let metadata_fullpath = entry.path().parent().unwrap().join(metadata_filename);
 
-                            let smi_metadata_filename = format!(".{file_name_str}.smi_metadata");
-                            let smi_metadata_fullpath = entry.path().parent().unwrap().join(smi_metadata_filename);
-                            corpus_inputs.push((entry.path().to_str().unwrap().to_string() , metadata_fullpath.to_str().unwrap().to_string(), smi_metadata_fullpath.to_str().unwrap().to_string(), 0));
+                            // let smi_metadata_filename = format!(".{file_name_str}.smi_metadata");
+                            // let smi_metadata_fullpath = entry.path().parent().unwrap().join(smi_metadata_filename);
+                            // corpus_inputs.push((entry.path().to_str().unwrap().to_string() , metadata_fullpath.to_str().unwrap().to_string(), smi_metadata_fullpath.to_str().unwrap().to_string(), 0));
+                            corpus_inputs.push((entry.path().to_str().unwrap().to_string() , metadata_fullpath.to_str().unwrap().to_string(), 0));
                         }
                     }
                 }
@@ -552,22 +553,22 @@ pub fn smm_phase_run(input_corpus : PathBuf, emulator: &mut Emulator<NopCommandM
                 let contents = fs::read_to_string(input.1.clone()).unwrap();
                 let config_json : Value = serde_json::from_str(&contents[..]).unwrap();
                 let found_time = config_json.get("found_time").unwrap().as_str().unwrap().parse::<u128>().unwrap();
-                input.3 = found_time;
+                input.2 = found_time;
             }
             corpus_inputs.sort_by( |a ,b| {
-                a.3.cmp(&b.3)
+                a.2.cmp(&b.2)
             });
             for input in corpus_inputs.iter() {
-                smi_group_info_from_file(&PathBuf::from(input.2.clone()));
+                // smi_group_info_from_file(&PathBuf::from(input.2.clone()));
                 let input_testcase = MultipartInput::from_file(input.0.clone()).unwrap();
                 info!("exec input {}",input.0.clone());
                 fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input_testcase);
-                let total_seconds = input.3 / 1_000_000;
+                let total_seconds = input.2 / 1_000_000;
                 let hours = total_seconds / 3600;
                 let minutes = (total_seconds % 3600) / 60;
                 let seconds = total_seconds % 60;
                 info!("bbl {}h:{}min:{}s {}",hours,minutes,seconds, num_bbl_covered());
-                ret.push((input.3, num_bbl_covered()));
+                ret.push((input.2, num_bbl_covered()));
                 if ctrlc_pressed() {
                     exit_elegantly(ExitProcessType::Ok);
                 } 
