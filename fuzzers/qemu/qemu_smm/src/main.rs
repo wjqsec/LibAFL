@@ -381,8 +381,13 @@ fn fuzz((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf
                 //         bbl_debug_info(modules.qemu().first_cpu().unwrap()); 
                 //     }))
                 // );
-                // let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3)= qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),8000000000, true, false);
-                exit_elegantly(ExitProcessType::Error(&format!("fuzz one module over, run to next module error")));
+                let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3)= qemu_run_once(qemu, &FuzzerSnapshot::new_empty(),8000000000, true, false);
+                let mut rsp_data_buf : [u8; 8] = [0 ; 8];
+                unsafe {
+                    cpu.read_mem(arg2,&mut rsp_data_buf);
+                }
+                let rsp_data = u64::from_le_bytes(rsp_data_buf);
+                exit_elegantly(ExitProcessType::Error(&format!("fuzz one module over, run to next module error pc:{} pc_crash:{} [rsp]:{}", get_readable_addr(pc), get_readable_addr(arg1), get_readable_addr(rsp_data))));
             },
             SnapshotKind::StartOfUefiSnap(_) => { 
                 exit_elegantly(ExitProcessType::Error("got StartOfUefi"));
@@ -599,6 +604,7 @@ fn coverage((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &Pat
             }
             FuzzerSnapshot::restore_from_file(qemu, &snapshot_bin);
             let ret_coverage = init_phase_run(corpus_dir, &mut emulator); 
+            coverage.extend(ret_coverage);
             module_index += 1;
         }
         block_id.remove(true);

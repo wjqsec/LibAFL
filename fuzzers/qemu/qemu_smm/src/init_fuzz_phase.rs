@@ -145,15 +145,26 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
     snapshot.restore_fuzz_snapshot(qemu, true);
 
     // skip();
-    // let try_snapshot = try_run_without_fuzz(qemu);
-    // if let SnapshotKind::None = try_snapshot {
-    //     error!("cannot skip?");
-    //     exit_elegantly(ExitProcessType::Ok);
-    // } else {
-    //     snapshot.delete(qemu);
-    //     return try_snapshot;
+    // let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 50000000,false, false);
+    // if cmd == LIBAFL_QEMU_COMMAND_END && sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_END {
+    //     let exit_snapshot = FuzzerSnapshot::from_qemu(qemu);
+    //     let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 500000000,false, false);
+    //     if cmd == LIBAFL_QEMU_COMMAND_END {
+    //         if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_PREPARE {
+    //             File::create(corpus_dir.clone().join("ok"));
+    //             exit_snapshot.delete(qemu);
+    //             snapshot.delete(qemu);
+    //             return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::new_empty());
+    //         }
+    //         else if sync_exit_reason == LIBAFL_QEMU_END_SMM_MODULE_START {
+    //             File::create(corpus_dir.clone().join("ok"));
+    //             exit_snapshot.delete(qemu);
+    //             snapshot.delete(qemu);
+    //             return SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::new_empty());
+    //         }
+    //     }
     // }
-    
+    // return SnapshotKind::None;
 
     emulator.modules_mut().first_exec_all();
     let mut harness = |input: & MultipartInput<BytesInput>, state: &mut QemuExecutorState<_, _, _, _>| {
