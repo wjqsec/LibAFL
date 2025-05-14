@@ -499,6 +499,11 @@ pub fn skip() {
         SKIP_CURRENT_MODULE = true;
     }
 }
+pub fn get_skip() -> bool {
+    unsafe {
+        SKIP_CURRENT_MODULE
+    }
+}
 pub fn unskip() {
     unsafe {
         SKIP_CURRENT_MODULE = false;

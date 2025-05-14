@@ -150,12 +150,15 @@ fn main() {
     if !project_path.exists() {
         fs::create_dir_all(project_path.clone()).unwrap();
     }
-    let ovmf_code_copy = project_path.join("OVMF_CODE.fd");
-    let ovmf_var_copy = project_path.join("OVMF_VARS.fd");
+    
     let mut fuzz_tag = String::from_str("test_fuzz").unwrap();
     if let Some(tag) = args.tag {
         fuzz_tag = tag;
     }
+    
+    
+    let ovmf_code_copy = project_path.join(fuzz_tag.clone()).join("OVMF_CODE.fd");
+    let ovmf_var_copy = project_path.join(fuzz_tag.clone()).join("OVMF_VARS.fd");
     let seed_path = project_path.join(fuzz_tag.clone()).join("seed");
     let corpus_path = project_path.join(fuzz_tag.clone()).join("corpus");
     let crash_path = project_path.join(fuzz_tag.clone()).join("crash");
@@ -398,11 +401,17 @@ fn fuzz((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf
                 exit_elegantly(ExitProcessType::Error("got StartOfUefi"));
             },
             SnapshotKind::StartOfSmmInitSnap(_) => {
+                let mut skiped;
                 let (seed_dirs, corpus_dir, crash_dir, snapshot_bin) = setup_init_phase_dirs_for_fuzz(module_index, seed_path, corpus_path, crash_path, snapshot_path);
                 if save_tmp_snapshot {
                     FuzzerSnapshot::save_to_file(qemu, &snapshot_bin);
                 }
-                snapshot = init_phase_fuzz(seed_dirs, corpus_dir, crash_dir, &mut emulator); 
+                (snapshot, skiped) = init_phase_fuzz(seed_dirs, corpus_dir.clone(), crash_dir, &mut emulator); 
+                if skiped {
+                    fs::remove_file(&snapshot_bin);
+                } else {
+                    File::create(corpus_dir.clone().join("ok"));
+                }
                 module_index += 1;
             },
             SnapshotKind::EndOfSmmInitSnap(_) => { 
@@ -604,12 +613,15 @@ fn coverage((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &Pat
         let mut module_index = 0;
         loop {
             let (seed_dirs, corpus_dir, crash_dir, snapshot_bin) = get_init_phase_dirs_for_replay(module_index, seed_path, corpus_path, crash_path, snapshot_path);
-            if !corpus_dir.exists() || !snapshot_bin.exists() {
+            let ok_flag_path = corpus_dir.clone().join("ok");
+            if !corpus_dir.exists() {
                 break;
             }
-            FuzzerSnapshot::restore_from_file(qemu, &snapshot_bin);
-            let ret_coverage = init_phase_run(corpus_dir, &mut emulator); 
-            coverage.extend(ret_coverage);
+            if ok_flag_path.exists() {
+                FuzzerSnapshot::restore_from_file(qemu, &snapshot_bin);
+                let ret_coverage = init_phase_run(corpus_dir, &mut emulator); 
+                coverage.extend(ret_coverage);
+            }
             module_index += 1;
         }
         block_id.remove(true);

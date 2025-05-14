@@ -98,7 +98,7 @@ fn gen_init_random_seed(dir : &PathBuf) {
     initial_input.to_file(init_seed_path).unwrap();
 }
 
-pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, (CmpLogModule, ())), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, OnDiskCorpus<MultipartInput<BytesInput>>>>) -> SnapshotKind 
+pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir : PathBuf, emulator: &mut Emulator<NopCommandManager, NopEmulatorExitHandler, (EdgeCoverageModule, (CmpLogModule, ())), StdState<MultipartInput<BytesInput>, CachedOnDiskCorpus<MultipartInput<BytesInput>>, libafl_bolts::prelude::RomuDuoJrRand, OnDiskCorpus<MultipartInput<BytesInput>>>>) -> (SnapshotKind, bool)
 {
     let qemu = emulator.qemu();
     let cpu = qemu.first_cpu().unwrap();
@@ -125,24 +125,23 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
         let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 500000000,false, false);
         if cmd == LIBAFL_QEMU_COMMAND_END {
             if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_PREPARE {
-                File::create(corpus_dir.clone().join("ok"));
                 exit_snapshot.delete(qemu);
                 snapshot.delete(qemu);
-                return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::new_empty());
+                return (SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::new_empty()), get_skip());
             }
             else if sync_exit_reason == LIBAFL_QEMU_END_SMM_MODULE_START {
-                File::create(corpus_dir.clone().join("ok"));
+                
                 exit_snapshot.delete(qemu);
                 snapshot.delete(qemu);
-                return SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::new_empty());
+                return (SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::new_empty()),  get_skip());
             }
         }
-        exit_snapshot.restore_fuzz_snapshot(qemu, true);
+        exit_snapshot.restore_fuzz_snapshot(qemu,  get_skip());
         snapshot.delete(qemu);
         exit_snapshot.delete(qemu);
-        return SnapshotKind::None;
+        return (SnapshotKind::None, false);
     } 
-    snapshot.restore_fuzz_snapshot(qemu, true);
+    snapshot.restore_fuzz_snapshot(qemu,  get_skip());
 
     // skip();
     // let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 50000000,false, false);
@@ -151,16 +150,14 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
     //     let (qemu_exit_reason, pc, cmd, sync_exit_reason, arg1, arg2, arg3) = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 500000000,false, false);
     //     if cmd == LIBAFL_QEMU_COMMAND_END {
     //         if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_PREPARE {
-    //             File::create(corpus_dir.clone().join("ok"));
     //             exit_snapshot.delete(qemu);
     //             snapshot.delete(qemu);
-    //             return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::new_empty());
+    //             return (SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::new_empty()), get_skip());
     //         }
     //         else if sync_exit_reason == LIBAFL_QEMU_END_SMM_MODULE_START {
-    //             File::create(corpus_dir.clone().join("ok"));
     //             exit_snapshot.delete(qemu);
     //             snapshot.delete(qemu);
-    //             return SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::new_empty());
+    //             return (SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::new_empty()),  get_skip());
     //         }
     //     }
     // }
@@ -351,16 +348,14 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
                 if let QemuExitReason::SyncExit = qemu_exit_reason {
                     if cmd == LIBAFL_QEMU_COMMAND_END {
                         if sync_exit_reason == LIBAFL_QEMU_END_SMM_INIT_PREPARE {
-                            File::create(corpus_dir.clone().join("ok"));
                             exit_snapshot.delete(qemu);
                             snapshot.delete(qemu);
-                            return SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::new_empty());
+                            return (SnapshotKind::StartOfSmmInitSnap(FuzzerSnapshot::new_empty()), get_skip());
                         }
                         else if sync_exit_reason == LIBAFL_QEMU_END_SMM_MODULE_START {
-                            File::create(corpus_dir.clone().join("ok"));
                             exit_snapshot.delete(qemu);
                             snapshot.delete(qemu);
-                            return SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::new_empty());
+                            return (SnapshotKind::StartOfSmmModuleSnap(FuzzerSnapshot::new_empty()),  get_skip());
                         }
                     }
                 }
@@ -368,7 +363,7 @@ pub fn init_phase_fuzz(seed_dirs : PathBuf, corpus_dir : PathBuf, objective_dir 
             exit_snapshot.restore_fuzz_snapshot(qemu, true);
             exit_snapshot.delete(qemu);
             snapshot.delete(qemu);
-            return SnapshotKind::None;
+            return (SnapshotKind::None,  get_skip());
         }
     }
     unreachable!();
@@ -507,24 +502,21 @@ pub fn init_phase_run(corpus_dir : PathBuf, emulator: &mut Emulator<NopCommandMa
     
     let final_testcase_path = corpus_dir.clone().join("final");
     let final_metadata_path = corpus_dir.clone().join(".final.metadata");
-    let ok_flag_path = corpus_dir.clone().join("ok");
-    if ok_flag_path.exists() {
-        if final_testcase_path.exists() && final_metadata_path.exists() {
-            let input_testcase = MultipartInput::from_file(final_testcase_path).unwrap();
-            let contents = fs::read_to_string(final_metadata_path.clone()).unwrap();
-            let config_json : Value = serde_json::from_str(&contents[..]).unwrap();
-            let found_time = config_json.get("found_time").unwrap().as_str().unwrap().parse::<u128>().unwrap();
-    
-            fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input_testcase);
-            ret.push((found_time, num_bbl_covered()));
-            let total_seconds = found_time / 1_000_000;
-            let hours = total_seconds / 3600;
-            let minutes = (total_seconds % 3600) / 60;
-            let seconds = total_seconds % 60;
-            info!("bbl {}h:{}min:{}s {}",hours,minutes,seconds, num_bbl_covered());
-        } else {
-            let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 50000000,false, false);
-        }
+    if final_testcase_path.exists() && final_metadata_path.exists() {
+        let input_testcase = MultipartInput::from_file(final_testcase_path).unwrap();
+        let contents = fs::read_to_string(final_metadata_path.clone()).unwrap();
+        let config_json : Value = serde_json::from_str(&contents[..]).unwrap();
+        let found_time = config_json.get("found_time").unwrap().as_str().unwrap().parse::<u128>().unwrap();
+
+        fuzzer.execute_input(&mut state, &mut executor, &mut mgr, &input_testcase);
+        ret.push((found_time, num_bbl_covered()));
+        let total_seconds = found_time / 1_000_000;
+        let hours = total_seconds / 3600;
+        let minutes = (total_seconds % 3600) / 60;
+        let seconds = total_seconds % 60;
+        info!("bbl {}h:{}min:{}s {}",hours,minutes,seconds, num_bbl_covered());
+    } else {
+        let _ = qemu_run_once(qemu, &FuzzerSnapshot::new_empty(), 50000000,false, false);
     }
     snapshot.delete(qemu);
     return ret;
