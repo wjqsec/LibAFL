@@ -209,7 +209,12 @@ fn main() {
             if let Some(cov_module) = cov_module.clone() {
                 parse_cov_module_file(&PathBuf::from_str(cov_module.clone().as_str()).unwrap());
             }
-            coverage((&seed_path, &corpus_path, &crash_path, &snapshot_path),output, include_init_phase);  
+            if let Some(output) = output {
+                coverage((&seed_path, &corpus_path, &crash_path, &snapshot_path),Some(project_path.join(fuzz_tag.clone()).join(output)), include_init_phase);  
+            } else {
+                coverage((&seed_path, &corpus_path, &crash_path, &snapshot_path), None, include_init_phase);
+            }
+            
             if let Some(effective_cov_module) = effective_cov_module {
                 overwrite_cov_module_file(&PathBuf::from_str(effective_cov_module.as_str()).unwrap());
             }
@@ -523,7 +528,7 @@ fn replay((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathB
     
 }
 
-fn coverage((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf, &PathBuf, &PathBuf), coverage_log : Option<String>, include_init_phase : bool) {
+fn coverage((seed_path,corpus_path, crash_path, snapshot_path) : (&PathBuf, &PathBuf, &PathBuf, &PathBuf), coverage_log : Option<PathBuf>, include_init_phase : bool) {
     let mut coverage = Vec::new();
     let args: Vec<String> = gen_ovmf_qemu_args();
     let env: Vec<(String, String)> = env::vars().collect();
