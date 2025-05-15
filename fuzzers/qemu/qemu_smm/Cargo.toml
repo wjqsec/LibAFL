@@ -21,6 +21,7 @@ lto = "fat"
 codegen-units = 1
 
 [dependencies]
+flate2 = { version = "1.1.1" }
 uuid = {version = "1.11.0"}
 serde = { version = "1.0", features = ["derive"] }
 ctrlc = { version = "3.4.5" }
@@ -47,3 +48,4 @@ iced-x86 = "1.21.0"
 clap = { version = "4.5.23", features = ["derive"] }
 [build-dependencies]
 libafl_qemu_build = { path = "../../../libafl_qemu/libafl_qemu_build" }
+

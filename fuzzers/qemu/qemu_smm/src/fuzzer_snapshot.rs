@@ -10,6 +10,16 @@ use libafl_qemu::Regs;
 use libafl_qemu::GuestReg;
 use log::*;
 
+use std::io::prelude::*;
+use std::io;
+use flate2::Compression;
+use flate2::bufread::{ GzEncoder, GzDecoder};
+use std::fs::File;
+use std::io::BufReader;
+use crate::fs::remove_file;
+use crate::fs::rename;
+
+
 pub struct FuzzerSnapshot {
     qemu_snapshot : Option<FastSnapshotPtr>,
 }
@@ -21,6 +31,47 @@ pub enum SnapshotKind {
     EndOfSmmInitSnap(FuzzerSnapshot),
     StartOfSmmModuleSnap(FuzzerSnapshot),
     StartOfSmmFuzzSnap(FuzzerSnapshot),
+}
+
+fn compress_in_place(path: &PathBuf) -> std::io::Result<()> {
+    // Read original file
+    let mut input = File::open(path)?;
+    let b = BufReader::new(input);
+    let mut gz = GzEncoder::new(b, Compression::default());
+    let mut compressed_data = Vec::new();
+    gz.read_to_end(&mut compressed_data)?;
+    // Temp file
+    let tmp_path = path.with_extension("tmp");
+    let mut tmp_file = File::create(&tmp_path)?;
+    tmp_file.write_all(&compressed_data)?;
+    tmp_file.flush()?;
+
+    // Replace original
+    remove_file(path)?;
+    rename(tmp_path, path)?;
+
+    Ok(())
+}
+fn decompress_in_place(path: &PathBuf) -> std::io::Result<()> {
+    // Open and decompress
+    info!("decompress {:?}",path);
+    let input = File::open(path)?;
+    let b = BufReader::new(input);
+    let mut gz = GzDecoder::new(b);
+    let mut decompressed_data = Vec::new();
+    gz.read_to_end(&mut decompressed_data)?;
+
+    // Write to a temporary file
+    let tmp_path = path.with_extension("tmp");
+    let mut tmp_file = File::create(&tmp_path)?;
+    tmp_file.write_all(&decompressed_data)?;
+    tmp_file.flush()?;
+
+    // Replace original file
+    remove_file(path)?;
+    rename(tmp_path, path)?;
+
+    Ok(())
 }
 
 
@@ -71,12 +122,25 @@ impl FuzzerSnapshot {
         if !ret {
             exit_elegantly(ExitProcessType::Error("save state to file error"));
         }
+        let ret = compress_in_place(filename);
+        if ret.is_err() {
+            exit_elegantly(ExitProcessType::Error("compress state to file error"));
+        }
+
     }
 
     pub fn restore_from_file(qemu : Qemu, filename : &PathBuf) {
+        let ret = decompress_in_place(filename);
+        if ret.is_err() {
+            exit_elegantly(ExitProcessType::Error("decompress state to file error"));
+        }
         let ret = qemu.state_restore_from_file(filename.to_str().unwrap());
         if !ret {
             exit_elegantly(ExitProcessType::Error("restore state from file error"));
+        }
+        let ret = compress_in_place(filename);
+        if ret.is_err() {
+            exit_elegantly(ExitProcessType::Error("compress state to file error"));
         }
     }
 }
